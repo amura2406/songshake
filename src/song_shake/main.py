@@ -1,6 +1,11 @@
 import typer
 from rich import print
 from song_shake import auth, playlist, enrichment
+from dotenv import load_dotenv, find_dotenv
+import os
+
+# Load environment variables from .env file in current directory
+load_dotenv(find_dotenv(usecwd=True))
 
 app = typer.Typer()
 
