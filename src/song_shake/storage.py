@@ -25,3 +25,9 @@ def wipe_db(path: str = STORAGE_FILE):
         db = TinyDB(path)
         db.truncate()
         db.close()
+
+def get_all_tracks(db: TinyDB = None) -> list:
+    """Get all tracks from database."""
+    if db is None:
+        db = init_db()
+    return db.all()

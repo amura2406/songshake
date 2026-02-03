@@ -93,6 +93,14 @@ Example:
 song-shake enrich PL12345... --wipe
 ```
 
+### 4. Show Enriched Songs
+
+View the tracks currently stored in your local database.
+
+```bash
+song-shake show
+```
+
 ## Configuration
 
 The tool uses `.env` file for credentials.
