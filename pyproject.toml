@@ -1,0 +1,21 @@
+[project]
+name = "song-shake"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=1.61.0",
+    "python-dotenv>=1.2.1",
+    "rich>=14.3.2",
+    "tinydb>=4.8.2",
+    "typer>=0.21.1",
+    "yt-dlp>=2026.1.31",
+    "ytmusicapi>=1.11.5",
+]
+
+[project.scripts]
+song-shake = "song_shake.main:app"
+
+[tool.uv]
+package = true

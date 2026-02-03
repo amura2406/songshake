@@ -1,0 +1,24 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+
+# Virtual environments
+.venv
+
+# Environment variables and Secrets
+.env
+oauth.json
+curl.txt
+
+# Temporary files and Output
+temp_downloads/
+enriched_playlist.json
+__pycache__/
+*.DS_Store
+inspect_genai.py
+parse_auth.py
