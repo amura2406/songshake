@@ -98,7 +98,17 @@ song-shake enrich PL12345... --wipe
 View the tracks currently stored in your local database.
 
 ```bash
-song-shake show
+song-shake show [OPTIONS]
+```
+
+**Options:**
+-   `--limit` / `-l`: Number of rows to show (default: 100).
+-   `--genre` / `-g`: Filter by genre (case-insensitive).
+-   `--mood` / `-m`: Filter by mood (case-insensitive).
+
+Example:
+```bash
+song-shake show --genre "Pop" --limit 50
 ```
 
 ## Configuration

@@ -22,3 +22,6 @@ __pycache__/
 *.DS_Store
 inspect_genai.py
 parse_auth.py
+
+# Database
+songs.db

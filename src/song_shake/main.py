@@ -20,7 +20,11 @@ def enrich(playlist_id: str, wipe: bool = typer.Option(False, "--wipe", "-w", he
     enrichment.process_playlist(playlist_id, wipe=wipe)
 
 @app.command()
-def show():
+def show(
+    limit: int = typer.Option(100, "--limit", "-l", help="Number of rows to show"),
+    genre: str = typer.Option(None, "--genre", "-g", help="Filter by genre (case-insensitive)"),
+    mood: str = typer.Option(None, "--mood", "-m", help="Filter by mood (case-insensitive)"),
+):
     """Show enriched songs from the database."""
     from song_shake import storage
     from rich.table import Table
@@ -33,20 +37,41 @@ def show():
         console.print("[yellow]No songs in database.[/yellow]")
         return
         
-    table = Table(title="Enriched Songs")
+    # Filtering
+    filtered_tracks = []
+    for t in tracks:
+        # Genre filter
+        if genre:
+            t_genres = [g.lower() for g in t.get('genres', [])]
+            if not any(genre.lower() in g for g in t_genres):
+                continue
+        
+        # Mood filter
+        if mood:
+            t_moods = [m.lower() for m in t.get('moods', [])]
+            if not any(mood.lower() in m for m in t_moods):
+                continue
+                
+        filtered_tracks.append(t)
+    
+    # Limiting
+    display_tracks = filtered_tracks[:limit]
+    
+    table = Table(title=f"Enriched Songs ({len(display_tracks)}/{len(filtered_tracks)} shown)")
+    table.add_column("No", style="dim")
     table.add_column("Title", style="cyan")
     table.add_column("Artist", style="magenta")
     table.add_column("Genres", style="green")
     table.add_column("Moods", style="yellow")
     table.add_column("Status", style="blue")
     
-    for track in tracks:
+    for idx, track in enumerate(display_tracks, 1):
         genres = ", ".join(track.get('genres', []))
         moods = ", ".join(track.get('moods', []))
-        if len(genres) > 30: genres = genres[:27] + "..."
-        if len(moods) > 30: moods = moods[:27] + "..."
+        # No truncation as requested
         
         table.add_row(
+            str(idx),
             track.get('title', 'Unknown'),
             track.get('artists', 'Unknown'),
             genres,
@@ -55,6 +80,8 @@ def show():
         )
         
     console.print(table)
+    if len(display_tracks) < len(filtered_tracks):
+        console.print(f"[dim]... and {len(filtered_tracks) - len(display_tracks)} more. Use --limit to see more.[/dim]")
 
 if __name__ == "__main__":
     app()
