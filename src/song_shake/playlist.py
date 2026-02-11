@@ -32,8 +32,13 @@ def get_tracks(playlist_id: str):
         playlist = yt.get_playlist(playlist_id, limit=None)
         return playlist.get('tracks', [])
     except Exception as e:
-        console.print(f"[bold red]Error fetching tracks for {playlist_id}:[/bold red] {e}")
-        return []
+        from song_shake import auth
+        try:
+             # Fallback
+             return auth.get_data_api_tracks(yt, playlist_id)
+        except Exception as e2:
+             console.print(f"[bold red]Error fetching tracks for {playlist_id}:[/bold red] {e} -> {e2}")
+             return []
 
 def get_playlist_title(playlist_id: str) -> str:
      yt = get_ytmusic()

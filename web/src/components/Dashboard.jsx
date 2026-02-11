@@ -1,28 +1,37 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getPlaylists, startEnrichment, getSongs } from '../api';
-import { Play, Activity, ListMusic, LogOut, Search } from 'lucide-react';
+import { getPlaylists, startEnrichment, getEnrichmentStatus, getEnrichmentStreamUrl, getCurrentUser, logoutUser } from '../api';
+import { Play, Activity, ListMusic, LogOut, Search, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Dashboard = () => {
   const [playlists, setPlaylists] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPlaylist, setSelectedPlaylist] = useState(null);
+  const [processing, setProcessing] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [user, setUser] = useState(null);
   const navigate = useNavigate();
+  const logContainerRef = useRef(null);
 
   useEffect(() => {
-    loadPlaylists();
+    loadData();
   }, []);
 
-  const loadPlaylists = async () => {
+  const loadData = async () => {
     try {
-      const data = await getPlaylists();
-      setPlaylists(data);
+      const [pl, u] = await Promise.all([getPlaylists(), getCurrentUser()]);
+      setPlaylists(pl);
+      setUser(u);
     } catch (error) {
-      console.error("Failed to load playlists", error);
+      console.error("Failed to load data", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    navigate('/');
   };
 
   const handleStartEnrichment = async (playlistId) => {
@@ -35,19 +44,16 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-white p-8">
-      <header className="flex justify-between items-center mb-12">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-gradient-to-tr from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-            <Activity className="text-white" />
-          </div>
-          <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">Song Shake</h1>
+    <div className="min-h-screen bg-neutral-900 text-neutral-200 p-8 pb-32">
+      <header className="max-w-7xl mx-auto mb-12 flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">
+            Song Shake
+          </h1>
+          <p className="text-neutral-400 mt-2">Enrich your music library with AI</p>
         </div>
-        <div className="flex gap-4">
-          <button 
-            onClick={() => navigate('/results')}
-            className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors border border-neutral-700"
-          >
+
+        <div className="flex items-center gap-4">
             <ListMusic size={18} />
             <span>View Library</span>
           </button>

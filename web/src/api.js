@@ -13,6 +13,19 @@ export const checkAuth = async () => {
   }
 };
 
+export const getCurrentUser = async () => {
+  try {
+    const res = await api.get('/auth/me');
+    return res.data;
+  } catch (error) {
+    return null;
+  }
+};
+
+export const logoutUser = async () => {
+  await api.get('/auth/logout');
+};
+
 export const login = async (headers_raw) => {
   await api.post('/auth/login', { headers_raw });
 };
@@ -27,10 +40,44 @@ export const startEnrichment = async (playlist_id, owner = 'web_user', api_key =
   return res.data.task_id;
 };
 
-export const getEnrichmentStatus = async (task_id) => {
-  const res = await api.get(`/api/enrichment/${task_id}`);
-  return res.data;
+export const getAuthConfig = async () => {
+  const res = await api.get('/auth/config');
+  return res.data; // { use_env: boolean }
 };
+
+export const initGoogleAuth = async (clientId = null, clientSecret = null) => {
+  const response = await fetch('/auth/google/init', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+  });
+  if (!response.ok) throw new Error('Failed to init auth');
+  return response.json();
+};
+
+export const pollGoogleAuth = async (deviceCode, clientId = null, clientSecret = null) => {
+  const response = await fetch('/auth/google/poll', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_code: deviceCode, client_id: clientId, client_secret: clientSecret }),
+  });
+  // If 400, might be pending or error. But our API returns 200 with {status: pending} or throws 400 for real error?
+  // Let's check api.py again. It catches exceptions.
+  // If "pending", it returns {status: "pending"}.
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.detail || 'Failed to poll auth');
+  }
+  return response.json();
+};
+
+export const getEnrichmentStatus = async (taskId) => {
+  const response = await fetch(`/api/enrichment/status/${taskId}`);
+  if (!response.ok) throw new Error('Failed to get status');
+  return response.json();
+};
+// Helper to get stream URL
+export const getEnrichmentStreamUrl = (taskId) => `/api/enrichment/stream/${taskId}`;
 
 export const getSongs = async (owner = 'web_user', skip = 0, limit = 50) => {
   const res = await api.get('/api/songs', { params: { owner, skip, limit } });

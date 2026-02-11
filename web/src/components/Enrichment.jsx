@@ -1,44 +1,56 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getEnrichmentStatus } from '../api';
+import { getEnrichmentStreamUrl } from '../api';
 import { CheckCircle, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Enrichment = () => {
-  const { playlistId: taskIdRaw } = useParams(); // Note: route param is named playlistId but we passed taskId 
-  // Actually in Dashboard we did navigate(`/enrichment/${taskId}`)
-  // So the param name in App.jsx should be taskId ideally, but it is playlistId.
-  // Let's use it as taskId.
+  const { playlistId: taskIdRaw } = useParams();
   const taskId = taskIdRaw;
   
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
-  const pollInterval = useRef(null);
 
   useEffect(() => {
-    pollStatus();
-    pollInterval.current = setInterval(pollStatus, 1000); // Poll every second
+    // connect to SSE
+    const url = getEnrichmentStreamUrl(taskId);
+    const eventSource = new EventSource(url);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setStatus(data);
+        if (data.status === 'completed' || data.status === 'error') {
+          eventSource.close();
+        }
+        if (data.status === 'error') {
+          setError(data.message || 'Unknown error');
+        }
+      } catch (e) {
+        console.error("SSE Parse Error", e);
+      }
+    };
+
+    eventSource.onerror = (e) => {
+      console.error("SSE Error", e);
+      // Verify if it was just closed normally? No, onerror is error.
+      // If readyState is closed, we are done.
+      if (eventSource.readyState === EventSource.CLOSED) {
+        // normal close
+      } else {
+        setError('Connection lost. Retrying...');
+        eventSource.close();
+        // Attempt reconnect? EventSource auto-reconnects usually.
+      }
+    };
 
     return () => {
-      if (pollInterval.current) clearInterval(pollInterval.current);
+      eventSource.close();
     };
   }, [taskId]);
 
-  const pollStatus = async () => {
-    try {
-      const data = await getEnrichmentStatus(taskId);
-      setStatus(data);
-      if (data.status === 'completed' || data.status === 'error') {
-        clearInterval(pollInterval.current);
-      }
-    } catch (err) {
-      setError('Failed to fetch status');
-      clearInterval(pollInterval.current);
-    }
-  };
-
-  if (error) {
+  if (error && !status) { // Only show full screen error if no status yet
     return (
       <div className="min-h-screen bg-neutral-900 text-white flex items-center justify-center p-4">
         <div className="text-center">
@@ -54,7 +66,10 @@ const Enrichment = () => {
   if (!status) {
     return (
       <div className="min-h-screen bg-neutral-900 text-white flex items-center justify-center">
-        <Loader2 className="w-10 h-10 animate-spin text-purple-500" />
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 animate-spin text-purple-500" />
+          <p className="text-neutral-400">Connecting to stream...</p>
+        </div>
       </div>
     );
   }
@@ -92,7 +107,7 @@ const Enrichment = () => {
 
         <div className="bg-neutral-900 rounded-xl p-6 border border-neutral-700 mb-8 font-mono text-sm text-neutral-300">
           <p className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            <span className={`w-2 h-2 rounded-full ${status.status === 'running' ? 'bg-green-400 animate-pulse' : 'bg-neutral-500'}`} />
             {status.message || "Initializing..."}
           </p>
         </div>

@@ -1,14 +1,20 @@
+import requests
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+from urllib.parse import urlencode
+from urllib.parse import urlencode
 import uvicorn
 import os
 import json
-from ytmusicapi import YTMusic
-from song_shake import storage, enrichment, playlist
+import time
+import asyncio
+from ytmusicapi import YTMusic, setup
+from ytmusicapi.auth.oauth import RefreshingToken
+from song_shake import storage, enrichment, playlist, auth
 from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 
 app = FastAPI(title="Song Shake API")
@@ -22,13 +28,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# State for progress tracking
-# Format: { task_id: { "status": "running"|"completed"|"error", "total": int, "current": int, "message": str, "results": [] } }
+# State
 enrichment_tasks: Dict[str, Dict[str, Any]] = {}
+oauth_states: Dict[str, Any] = {} # Store device codes etc.
 
 class LoginRequest(BaseModel):
     headers_raw: Optional[str] = None
-    # Potentially OAuth code/token in future
+
+class OAuthInitRequest(BaseModel):
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+
+class OAuthPollRequest(BaseModel):
+    device_code: str
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
 
 class PlaylistResponse(BaseModel):
     playlistId: str
@@ -39,14 +53,15 @@ class PlaylistResponse(BaseModel):
 
 class EnrichmentRequest(BaseModel):
     playlist_id: str
-    owner: str = "web_user" # Default owner for web
-    api_key: Optional[str] = None # Google API Key
+    owner: str = "web_user"
+    api_key: Optional[str] = None
 
 class Song(BaseModel):
     videoId: str
     title: str
     artists: str
     album: Optional[str] = None
+    thumbnails: List[Dict[str, Any]] = []
     genres: List[str] = []
     moods: List[str] = []
     status: str
@@ -54,13 +69,71 @@ class Song(BaseModel):
     url: Optional[str] = None
     owner: Optional[str] = None
 
+
+
 def get_ytmusic():
-    if not os.path.exists("oauth.json"):
-        raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        return YTMusic("oauth.json")
+        return auth.get_ytmusic()
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+
+@app.get("/auth/logout")
+def logout():
+    if os.path.exists("oauth.json"):
+        os.remove("oauth.json")
+    return {"status": "logged_out"}
+
+@app.get("/auth/me")
+def get_current_user():
+    if not os.path.exists("oauth.json"):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        # Try to get user info via Google API
+        with open("oauth.json") as f:
+            tokens = json.load(f)
+        
+        token = tokens.get("access_token")
+        if not token:
+             raise HTTPException(status_code=401, detail="No access token")
+             
+        # Try userinfo endpoint first (might need openid/email scope which we didn't strictly request, but let's try)
+        # We only asked for 'https://www.googleapis.com/auth/youtube'
+        # But let's try the channel endpoint which is guaranteed to work with youtube scope
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # Get Channel Info (Code: snippet, mine=true)
+        res = requests.get(
+            "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+            headers=headers
+        )
+        
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("items"):
+                snippet = data["items"][0]["snippet"]
+                return {
+                    "name": snippet.get("title", "YouTube User"),
+                    "thumbnail": snippet["thumbnails"]["default"]["url"],
+                    "authenticated": True
+                }
+        
+        # If channel fails (e.g. no channel), try generic userinfo if possible, or just return basic info
+        # Since we know no-channel users exist, this is important.
+        # But with only youtube scope, userinfo might fail.
+        # Let's fallback to just "Authenticated User" if channel fails but token is valid.
+        
+        return {
+            "name": "Authenticated User", 
+            "thumbnail": None,
+            "authenticated": True,
+            "note": "Could not fetch channel profile"
+        }
+            
+    except Exception as e:
+        print(f"Error fetching user: {e}")
+        return {"authenticated": False}
+    return {"authenticated": False}
 
 @app.get("/auth/status")
 def auth_status():
@@ -74,13 +147,19 @@ def login(request: LoginRequest):
         raise HTTPException(status_code=400, detail="Headers required")
     
     try:
-        # Try to parse and save headers using ytmusicapi logic or our own
-        # Reusing auth.py logic or similar
-        # For now, let's just use YTMusic.setup
-        # It takes headers_raw and creates the file
-        YTMusic.setup(filepath="oauth.json", headers_raw=request.headers_raw)
+        is_json = False
+        try:
+            json.loads(request.headers_raw)
+            is_json = True
+        except json.JSONDecodeError:
+            pass
+            
+        if is_json:
+            with open("oauth.json", "w") as f:
+                f.write(request.headers_raw)
+        else:
+            setup(filepath="oauth.json", headers_raw=request.headers_raw)
         
-        # Verify
         YTMusic("oauth.json")
         return {"status": "success"}
     except Exception as e:
@@ -88,12 +167,176 @@ def login(request: LoginRequest):
             os.remove("oauth.json")
         raise HTTPException(status_code=400, detail=f"Invalid headers: {str(e)}")
 
+@app.get("/auth/config")
+def auth_config():
+    load_dotenv()
+    has_env = bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET"))
+    return {"use_env": has_env}
+
+@app.get("/auth/google/login")
+def google_auth_login():
+    load_dotenv()
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    if not client_id:
+        raise HTTPException(status_code=400, detail="GOOGLE_CLIENT_ID not set in .env")
+    
+    redirect_uri = "http://localhost:8000/auth/google/callback"
+    scope = "https://www.googleapis.com/auth/youtube"
+    
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": scope,
+        "access_type": "offline",
+        "prompt": "consent"
+    }
+    url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    return RedirectResponse(url)
+
+@app.get("/auth/google/callback")
+def google_auth_callback(code: str):
+    load_dotenv()
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    redirect_uri = "http://localhost:8000/auth/google/callback"
+    
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=400, detail="Credentials not set in .env")
+
+    # Exchange code for token
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri
+    }
+    
+    try:
+        response = requests.post(token_url, data=data)
+        response.raise_for_status()
+        tokens = response.json()
+        
+        tokens['expires_at'] = int(time.time()) + tokens.get('expires_in', 3600)
+        
+        with open("oauth.json", "w") as f:
+            json.dump(tokens, f)
+            
+        return RedirectResponse("http://localhost:5173/")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {e}")
+
+@app.post("/auth/google/init")
+def google_auth_init(request: OAuthInitRequest):
+    try:
+        load_dotenv()
+        client_id = request.client_id or os.getenv("GOOGLE_CLIENT_ID")
+        client_secret = request.client_secret or os.getenv("GOOGLE_CLIENT_SECRET")
+        
+        if not client_id or not client_secret:
+             raise HTTPException(status_code=400, detail="Client ID and Secret required (not found in request or env)")
+
+        creds = OAuthCredentials(client_id=client_id, client_secret=client_secret)
+        code = creds.get_code()
+        # Store state if needed, but client sends device_code back for polling
+        return code
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/auth/google/poll")
+def google_auth_poll(request: OAuthPollRequest):
+    try:
+        load_dotenv()
+        client_id = request.client_id or os.getenv("GOOGLE_CLIENT_ID")
+        client_secret = request.client_secret or os.getenv("GOOGLE_CLIENT_SECRET")
+        
+        if not client_id or not client_secret:
+             raise HTTPException(status_code=400, detail="Client ID and Secret required")
+
+        creds = OAuthCredentials(client_id=client_id, client_secret=client_secret)
+        # Verify code
+        token = creds.token_from_code(request.device_code)
+        
+        # If we are here, we got the token!
+        # Create a RefreshingToken to get the full structure and save it
+        # We need to reconstruct the token dict expected by RefreshingToken
+        # The token_from_code returns something like {'access_token': ..., 'expires_in': ..., 'refresh_token': ...}
+        
+        # We need to save it as oauth.json
+        # RefreshingToken.store_token expects a path.
+        # check token structure
+        
+        # We can just Dump it to json. YTMusic accepts file path or dict (if valid json keys)
+        # But YTMusic usually expects headers dict for 'browser' auth, OR a specific json for 'oauth'.
+        # For 'oauth', it needs 'refresh_token', 'client_id', 'client_secret'.
+        
+        final_token = token.copy()
+        final_token['client_id'] = client_id
+        final_token['client_secret'] = client_secret
+        
+        # Wait, ytmusicapi.setup_oauth returns a RefreshingToken which has .as_json()
+        # Let's try to mimic that.
+        ref_token = RefreshingToken(credentials=creds, **token)
+        ref_token.update(ref_token.as_dict()) # updates expires_at
+        
+        # We need to save this to oauth.json
+        # The json format for oauth includes token_type, access_token, refresh_token, scope, expires_at, expires_in
+        # AND It should probably be passed to YTMusic("oauth.json")
+        
+        with open("oauth.json", "w") as f:
+            f.write(ref_token.as_json())
+            
+        return {"status": "success"}
+        
+    except Exception as e:
+        # Check if it's just pending
+        err_str = str(e).lower()
+        if "authorization_pending" in err_str or "precondition_required" in err_str:
+            return {"status": "pending"}
+        # ytmusicapi might raise specific exceptions
+        if "authorization_pending" in str(e): # check actual string if possible
+             return {"status": "pending"}
+             
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/playlists", response_model=List[PlaylistResponse])
 def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
     try:
-        playlists = yt.get_library_playlists(limit=50)
+        playlists = []
+        try:
+            playlists = yt.get_library_playlists(limit=50)
+        except Exception as e:
+            print(f"DEBUG: get_library_playlists failed: {e}")
+            # Fallback to Data API
+            try:
+                print("Attempting Data API fallback...")
+                playlists = auth.get_data_api_playlists(yt, limit=50)
+            except Exception as e2:
+                print(f"Data API fallback failed: {e2}")
+                pass
+        
+        # Manually add Liked Music if not present
+        has_liked = any(p.get('playlistId') == 'LM' or p.get('title') == 'Your Likes' for p in playlists)
+        
+        if not has_liked:
+            liked_music = {
+                "playlistId": "LM",
+                "title": "Liked Music",
+                "thumbnails": [{"url": "https://www.gstatic.com/youtube/media/ytm/images/pbg/liked-music-@576.png", "width": 576, "height": 576}],
+                "count": "Auto", 
+                "description": "Your liked songs"
+            }
+            playlists.insert(0, liked_music)
+        
         return playlists
     except Exception as e:
+        # If 401, trying to refresh token?
+        # YTMusic handles refresh automatically if initialized with oauth.json
+        print(f"DEBUG: get_playlists failed: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str):
@@ -125,11 +368,6 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
                 continue
 
             try:
-                # Reuse logic from enrichment.py but we need it to be importable/callable per track
-                # OR we copy-paste logic here.
-                # Ideally refactor enrichment.py to expose 'process_single_track'
-                # For now, let's copy the core logic or call `enrichment.download_track` and `enrichment.enrich_track`
-                
                 filename = enrichment.download_track(video_id)
                 metadata = enrichment.enrich_track(client, filename, title, artists, tracker)
                 
@@ -141,6 +379,7 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
                     "title": title,
                     "artists": artists,
                     "album": track.get('album', {}).get('name') if track.get('album') else None,
+                    "thumbnails": track.get('thumbnails', []),
                     "genres": metadata.get('genres', []),
                     "moods": metadata.get('moods', []),
                     "status": "error" if metadata.get('error') else "success",
@@ -152,12 +391,14 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
                 storage.save_track(db, track_data)
                 results.append(track_data)
                 
+                # Update task immediately so stream sees it
+                enrichment_tasks[task_id]["results"] = results
+                
             except Exception as e:
                 print(f"Error processing {title}: {e}")
         
         enrichment_tasks[task_id]["status"] = "completed"
         enrichment_tasks[task_id]["message"] = "Enrichment complete"
-        enrichment_tasks[task_id]["results"] = results # Optional: might be too big
         enrichment_tasks[task_id]["current"] = len(tracks)
         
     except Exception as e:
@@ -183,19 +424,58 @@ def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTas
     background_tasks.add_task(process_enrichment, task_id, request.playlist_id, request.owner, api_key)
     return {"task_id": task_id}
 
-@app.get("/enrichment/{task_id}")
+@app.get("/enrichment/status/{task_id}")
 def get_enrichment_status(task_id: str):
     if task_id not in enrichment_tasks:
         raise HTTPException(status_code=404, detail="Task not found")
     return enrichment_tasks[task_id]
 
+@app.get("/enrichment/stream/{task_id}")
+async def stream_enrichment_status(task_id: str):
+    if task_id not in enrichment_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    async def event_generator():
+        last_current = -1
+        last_status = ""
+        
+        while True:
+            if task_id not in enrichment_tasks:
+                yield f"event: error\ndata: {json.dumps({'error': 'Task lost'})}\n\n"
+                break
+                
+            task = enrichment_tasks[task_id]
+            
+            # Yield event if something changed or just periodically
+            # SSE clients usually expect keep-alive
+            
+            data = json.dumps({
+                "status": task["status"],
+                "total": task["total"],
+                "current": task["current"],
+                "message": task["message"],
+                # Don't send full results every time if big, but for now it's fine
+            })
+            
+            yield f"data: {data}\n\n"
+            
+            if task["status"] in ["completed", "error"]:
+                # Send one last time then close
+                break
+            
+            await asyncio.sleep(0.5)
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 @app.get("/songs", response_model=List[Song])
 def get_songs(owner: str = "web_user", skip: int = 0, limit: int = 50):
+    print(f"DEBUG: get_songs requested for owner='{owner}' skip={skip} limit={limit}")
     all_tracks = storage.get_all_tracks(owner=owner)
-    # Basic pagination in memory (TinyDB doesn't support skip/limit natively efficiently)
-    start = skip
-    end = skip + limit
-    return all_tracks[start:end]
+    print(f"DEBUG: storage returned {len(all_tracks)} tracks")
+    if all_tracks:
+        print(f"DEBUG: First track sample: {all_tracks[0]}")
+    return all_tracks[skip : skip + limit]
 
 if __name__ == "__main__":
     uvicorn.run("song_shake.api:app", host="0.0.0.0", port=8000, reload=True)
+

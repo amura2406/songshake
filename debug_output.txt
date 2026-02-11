@@ -1,0 +1,11 @@
+Authenticated.
+
+--- Liked Songs ---
+Error fetching liked songs: "Unable to find 'twoColumnBrowseResultsRenderer' using path ['contents', 'twoColumnBrowseResultsRenderer', 'tabs', 0, 'tabRenderer', 'content', 'sectionListRenderer', 'contents', 0] on {'singleColumnBrowseResultsRenderer': {'tabs': [{'tabRenderer': {'selected': True, 'content': {'sectionListRenderer': {'contents': [{'itemSectionRenderer': {'contents': [{'messageRenderer': {'text': {'runs': [{'text': 'Looking for what you’ve liked?'}]}, 'icon': {'iconType': 'LIKE'}, 'trackingParams': 'CAQQljsYACITCPiBx4KP0ZIDFe6dSwUdWdMGOg==', 'button': {'buttonRenderer': {'style': 'STYLE_DEFAULT', 'isDisabled': False, 'text': {'runs': [{'text': 'Sign in'}]}, 'navigationEndpoint': {'clickTrackingParams': 'CAUQ8FsiEwj4gceCj9GSAxXunUsFHVnTBjrKAQSjHDkZ', 'signInEndpoint': {'hack': True}}, 'trackingParams': 'CAUQ8FsiEwj4gceCj9GSAxXunUsFHVnTBjo='}}, 'subtext': {'messageSubtextRenderer': {'text': {'runs': [{'text': 'Sign in to listen to your liked tracks'}]}}}, 'style': {'value': 'RENDER_STYLE_VERTICAL_CENTERED'}}}], 'trackingParams': 'CAMQuy8YACITCPiBx4KP0ZIDFe6dSwUdWdMGOg=='}}], 'trackingParams': 'CAIQui8iEwj4gceCj9GSAxXunUsFHVnTBjo='}}, 'trackingParams': 'CAEQ8JMBGAAiEwj4gceCj9GSAxXunUsFHVnTBjo='}}]}}, exception: 'twoColumnBrowseResultsRenderer'"
+
+--- Library Playlists ---
+Found 0 playlists.
+Trying to debug why...
+
+--- History ---
+Error fetching history: None

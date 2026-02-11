@@ -71,7 +71,15 @@ song-shake setup-auth
 *   Filter for `browse`
 *   Refresh page
 *   Right-click a request > Copy > Copy Request Headers
+*   Right-click a request > Copy > Copy Request Headers
 *   Paste into the terminal
+
+### 1a. (Alternative) Web Interface Login
+For a smoother experience with the Web UI:
+1.  Create a **Web Application** credential in Google Cloud Console.
+2.  Set **Authorized Redirect URI** to `http://localhost:8000/auth/google/callback`.
+3.  Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to your `.env` file.
+4.  Click **"Login with Google"** on the dashboard.
 
 ### 2. List Playlists
 
@@ -115,6 +123,92 @@ song-shake show [OPTIONS]
 Example:
 ```bash
 song-shake show --genre "Pop" --limit 50
+```
+
+## 🏗 Architecture
+
+```mermaid
+graph TD
+    User[User] -->|Browser| Frontend[React Frontend]
+    User -->|Terminal| CLI[CLI Tool]
+    
+    Frontend -->|REST API| Backend[FastAPI Backend]
+    CLI -->|Library Calls| Core[Core Logic]
+    Backend -->|Library Calls| Core
+    
+    subgraph "Song Shake Core"
+        Core --> Auth[Auth Module]
+        Core --> Playlist[Playlist Fetcher]
+        Core --> Enrichment[AI Enrichment]
+        Core --> Storage[TinyDB Storage]
+    end
+    
+    Auth -->|OAuth2| Google[Google Identity]
+    Playlist -->|Internal API| YTMusic[YouTube Music API]
+    Playlist -->|Fallback| DataAPI[YouTube Data API v3]
+    Enrichment -->|Analyze| Gemini[Google Gemini AI]
+    
+    Storage -->|Persist| DB[(songs.db)]
+    Auth -->|Persist| Token[(oauth.json)]
+```
+
+## 🧩 Components
+
+### 1. Command Line Interface (CLI)
+The original power-user tool.
+- **Usage**: `song-shake [COMMAND]`
+- **Features**: Auth management, playlist processing, searching, and exporting.
+- **Best for**: Headless servers,cron jobs, or quick terminal checks.
+
+### 2. Backend API
+A FastAPI-based server that exposes the core logic to the web.
+- **Port**: 8000
+- **Docs**: `http://localhost:8000/docs`
+- **Key Features**: 
+    - Real-time SSE stream for enrichment logs.
+    - Robust OAuth flow (Web Application).
+    - Intelligent fallback to YouTube Data API for channel-less accounts.
+
+### 3. Frontend (Web UI)
+A modern, responsive React application.
+- **Port**: 5173 (Vite)
+- **Features**:
+    - "Login with Google" integration.
+    - Dashboard with playlist selection.
+    - Real-time progress visualization.
+    - Rich, interactive results view with playback.
+
+## ⚠️ Gotchas & Pitfalls
+
+### 1. The "No Channel" Issue
+**Problem**: The internal YouTube Music API (used by `ytmusicapi`) fails if the Google Account doesn't have a YouTube Channel created, returning `400 Bad Request`.
+**Solution**: Song Shake implements a **smart fallback**. If the internal API fails, it automatically switches to the public **YouTube Data API v3** using the same credentials. This allows users without a channel (e.g., pure GSuite or standard Gmail users) to still fetch their playlists and tracks perfectly.
+
+### 2. Authentication Flow
+- **CLI**: Uses Device Code Flow (requires pasting a code on a separate device).
+- **Web**: Uses Web Application Flow (standard "Login with Google" redirect).
+- **Token Compatibility**: Both flows generate an `oauth.json` file. The backend is designed to handle both, but for the best Web UI experience, use the Web Login button.
+
+### 3. Rate Limiting
+- **YouTube Data API**: Has a quota (default 10,000 units/day). Listing playlists is cheap (1 unit), but heavy usage might hit limits.
+- **Gemini**: The Flash model is fast and cheap, but ensure your `GOOGLE_API_KEY` has billing enabled for sustained high-volume usage.
+
+## 🚀 Development
+
+### Backend
+```bash
+uv run uvicorn song_shake.api:app --reload --port 8000
+```
+
+### Frontend
+```bash
+cd web
+npm run dev
+```
+
+### CLI
+```bash
+song-shake --help
 ```
 
 ## Configuration
