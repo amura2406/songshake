@@ -139,100 +139,112 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
         console.print(f"[bold red]Error enriching:[/bold red] {e}")
         return {"genres": ["Error"], "moods": ["Error"], "error": str(e)}
 
-def process_playlist(playlist_id: str, wipe: bool = False):
-    if wipe:
-        from song_shake import storage
-        storage.wipe_db()
-        console.print("[yellow]Database wiped.[/yellow]")
-
-    load_dotenv()
-    
-    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        from rich.prompt import Prompt
-        api_key = Prompt.ask("Enter Google API Key", password=True)
-        if not api_key:
-            console.print("[red]API Key required.[/red]")
-            return
+# Initial cleanup
+    if os.path.exists(TEMP_DIR):
+        shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
     try:
-        client = genai.Client(api_key=api_key)
-    except Exception as e:
-        console.print(f"[red]Error initializing Gemini client: {e}[/red]")
-        return
-    
-    # Verify playlist
-    console.print(f"Fetching tracks for playlist {playlist_id}...")
-    tracks = playlist.get_tracks(playlist_id)
-    if not tracks:
-        console.print("No tracks found or error fetching.")
-        return
+        if wipe:
+            from song_shake import storage
+            storage.wipe_db()
+            console.print("[yellow]Database wiped.[/yellow]")
 
-    results = []
-    tracker = TokenTracker()
-    
-    with Progress() as progress:
-        task = progress.add_task("Processing tracks...", total=len(tracks))
+        load_dotenv()
         
-        for track in tracks:
-            video_id = track.get('videoId')
-            title = track.get('title')
-            artists = ", ".join([a['name'] for a in track.get('artists', [])])
-            
-            if not video_id:
-                progress.advance(task)
-                continue
-                
-            progress.console.print(f"Processing: {title} - {artists}")
-            
-            # Download
-            try:
-                filename = download_track(video_id)
-                
-                # Enrich
-                metadata = enrich_track(client, filename, title, artists, tracker)
-                
-                # Check for error in metadata
-                if metadata.get('error') or "Error" in metadata.get('genres', []):
-                    tracker.failed += 1
-                else:
-                    tracker.successful += 1
-                
-                # Cleanup
-                if os.path.exists(filename):
-                    os.remove(filename)
-                
-                track_data = {
-                    "videoId": video_id,
-                    "title": title,
-                    "artists": artists,
-                    "album": track.get('album', {}).get('name') if track.get('album') else None,
-                    "genres": metadata.get('genres', []),
-                    "moods": metadata.get('moods', []),
-                    "status": "error" if metadata.get('error') else "success",
-                    "error_message": metadata.get('error')
-                }
-                results.append(track_data)
-                
-            except Exception as e:
-                 console.print(f"[red]Failed to process {title}: {e}[/red]")
-                 tracker.failed += 1
-                 results.append({
-                    "videoId": video_id,
-                    "title": title,
-                    "artists": artists,
-                    "status": "error",
-                    "error_message": str(e)
-                 })
-            
-            progress.advance(task)
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            from rich.prompt import Prompt
+            api_key = Prompt.ask("Enter Google API Key", password=True)
+            if not api_key:
+                console.print("[red]API Key required.[/red]")
+                return
 
-    # Save results to TinyDB
-    from song_shake import storage
-    db = storage.init_db()
-    for res in results:
-        storage.save_track(db, res)
-    console.print(f"[green]Done! Saved {len(results)} tracks to database.[/green]")
-    
-    # Print Summary
-    tracker.print_summary()
+        try:
+            client = genai.Client(api_key=api_key)
+        except Exception as e:
+            console.print(f"[red]Error initializing Gemini client: {e}[/red]")
+            return
+        
+        # Verify playlist
+        console.print(f"Fetching tracks for playlist {playlist_id}...")
+        tracks = playlist.get_tracks(playlist_id)
+        if not tracks:
+            console.print("No tracks found or error fetching.")
+            return
+
+        results = []
+        tracker = TokenTracker()
+        
+        with Progress() as progress:
+            task = progress.add_task("Processing tracks...", total=len(tracks))
+            
+            for track in tracks:
+                video_id = track.get('videoId')
+                title = track.get('title')
+                artists = ", ".join([a['name'] for a in track.get('artists', [])])
+                
+                if not video_id:
+                    progress.advance(task)
+                    continue
+                    
+                progress.console.print(f"Processing: {title} - {artists}")
+                
+                # Download
+                try:
+                    filename = download_track(video_id)
+                    
+                    # Enrich
+                    metadata = enrich_track(client, filename, title, artists, tracker)
+                    
+                    # Check for error in metadata
+                    if metadata.get('error') or "Error" in metadata.get('genres', []):
+                        tracker.failed += 1
+                    else:
+                        tracker.successful += 1
+                    
+                    # Cleanup specific file (optional now but good to keep to save space during run)
+                    if os.path.exists(filename):
+                        os.remove(filename)
+                    
+                    track_data = {
+                        "videoId": video_id,
+                        "title": title,
+                        "artists": artists,
+                        "album": track.get('album', {}).get('name') if track.get('album') else None,
+                        "genres": metadata.get('genres', []),
+                        "moods": metadata.get('moods', []),
+                        "status": "error" if metadata.get('error') else "success",
+                        "error_message": metadata.get('error')
+                    }
+                    results.append(track_data)
+                    
+                except Exception as e:
+                     console.print(f"[red]Failed to process {title}: {e}[/red]")
+                     tracker.failed += 1
+                     results.append({
+                        "videoId": video_id,
+                        "title": title,
+                        "artists": artists,
+                        "status": "error",
+                        "error_message": str(e)
+                     })
+                
+                progress.advance(task)
+
+        # Save results to TinyDB
+        from song_shake import storage
+        db = storage.init_db()
+        for res in results:
+            storage.save_track(db, res)
+        console.print(f"[green]Done! Saved {len(results)} tracks to database.[/green]")
+        
+        # Print Summary
+        tracker.print_summary()
+
+    finally:
+        # Final cleanup
+        if os.path.exists(TEMP_DIR):
+            try:
+                shutil.rmtree(TEMP_DIR, ignore_errors=True)
+            except Exception:
+                pass
