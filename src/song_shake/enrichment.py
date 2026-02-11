@@ -214,7 +214,9 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
                         "genres": metadata.get('genres', []),
                         "moods": metadata.get('moods', []),
                         "status": "error" if metadata.get('error') else "success",
-                        "error_message": metadata.get('error')
+                        "error_message": metadata.get('error'),
+                        "url": f"https://music.youtube.com/watch?v={video_id}",
+                        "owner": "local" # CLI default, overridden by caller if needed (actually caller can't override easily unless we pass it in, but we can set it before saving)
                     }
                     results.append(track_data)
                     

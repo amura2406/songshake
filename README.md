@@ -1,9 +1,15 @@
-# Song Shake
+# Song Shake (v0.5.0)
 
-Song Shake is a CLI tool that supercharges your YouTube Music playlists by enriching them with granular genre and mood metadata using Google's powerful Gemini 3 Flash model.
+Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
+
+This tool takes your YouTube Music playlists and enriches them with **Genres** and **Moods** using the power of **Google Gemini 3 Flash**.
 
 ## Features
 
+-   **Web Interface (New!)**: Modern UI for managing enrinchment (Login, Dashboard, Progress, Results).
+-   **CLI Tool**: Classic command-line interface for quick operations.
+-   **Smart Enrichment**: Uses AI to analyze audio and determine genre/mood.
+-   **Local Database**: Stores results in `songs.db` (TinyDB).
 -   **Seamless Auth**: Securely authenticate with your YouTube Music account.
 -   **Audio Download**: Automatically downloads tracks using `yt-dlp`.
 -   **AI Enrichment**: Uses **Gemini 3 Flash Preview** to listen to audio and extract:
