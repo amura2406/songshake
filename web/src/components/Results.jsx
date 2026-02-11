@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getSongs } from '../api';
+import { getSongs, getCurrentUser } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Music, Disc, User, Tag, ChevronLeft, ChevronRight, Play, X } from 'lucide-react';
 
@@ -8,17 +8,28 @@ const Results = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [currentSong, setCurrentSong] = useState(null);
+  const [user, setUser] = useState(null);
   const limit = 50;
   const navigate = useNavigate();
 
   useEffect(() => {
-    loadSongs();
+    loadData();
   }, [page]);
 
-  const loadSongs = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      const data = await getSongs('web_user', page * limit, limit);
+      // Fetch user first if not loaded
+      let currentUser = user;
+      if (!currentUser) {
+        currentUser = await getCurrentUser();
+        setUser(currentUser);
+      }
+
+      const ownerId = currentUser ? currentUser.id : 'web_user';
+      console.log("Fetching songs for owner:", ownerId);
+
+      const data = await getSongs(ownerId, page * limit, limit);
       setSongs(data);
     } catch (error) {
       console.error("Failed to load songs", error);

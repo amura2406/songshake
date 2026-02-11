@@ -36,7 +36,9 @@ const Dashboard = () => {
 
   const handleStartEnrichment = async (playlistId) => {
     try {
-      const taskId = await startEnrichment(playlistId);
+      const ownerId = user ? user.id : 'web_user';
+      console.log("Starting enrichment for owner:", ownerId);
+      const taskId = await startEnrichment(playlistId, ownerId);
       navigate(`/enrichment/${taskId}`);
     } catch (error) {
       console.error("Failed to start enrichment", error);

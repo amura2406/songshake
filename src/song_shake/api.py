@@ -88,7 +88,6 @@ def get_current_user():
     if not os.path.exists("oauth.json"):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    try:
         # Try to get user info via Google API
         with open("oauth.json") as f:
             tokens = json.load(f)
@@ -97,34 +96,56 @@ def get_current_user():
         if not token:
              raise HTTPException(status_code=401, detail="No access token")
              
-        # Try userinfo endpoint first (might need openid/email scope which we didn't strictly request, but let's try)
-        # We only asked for 'https://www.googleapis.com/auth/youtube'
-        # But let's try the channel endpoint which is guaranteed to work with youtube scope
         headers = {"Authorization": f"Bearer {token}"}
         
-        # Get Channel Info (Code: snippet, mine=true)
+        # 1. Try Channel Info (best for stable ID)
         res = requests.get(
             "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
             headers=headers
         )
         
+        user_id = "web_user"
+        name = "Authenticated User"
+        thumb = None
+        
         if res.status_code == 200:
             data = res.json()
             if data.get("items"):
-                snippet = data["items"][0]["snippet"]
+                item = data["items"][0]
+                user_id = item["id"]  # Unique Channel ID
+                snippet = item["snippet"]
+                name = snippet.get("title", "YouTube User")
+                thumb = snippet["thumbnails"]["default"]["url"]
                 return {
-                    "name": snippet.get("title", "YouTube User"),
-                    "thumbnail": snippet["thumbnails"]["default"]["url"],
+                    "id": user_id,
+                    "name": name,
+                    "thumbnail": thumb,
                     "authenticated": True
                 }
         
-        # If channel fails (e.g. no channel), try generic userinfo if possible, or just return basic info
-        # Since we know no-channel users exist, this is important.
-        # But with only youtube scope, userinfo might fail.
-        # Let's fallback to just "Authenticated User" if channel fails but token is valid.
-        
+        # 2. If Channel fails (Channel-less), try UserInfo for name/email
+        # This requires 'profile' or 'email' scope, which we might not have, but let's try.
+        try:
+            res2 = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
+            if res2.status_code == 200:
+                uinfo = res2.json()
+                # Use email as ID if available, otherwise ID
+                user_id = uinfo.get("id") or uinfo.get("email") or "web_user"
+                name = uinfo.get("name") or uinfo.get("email") or "User"
+                thumb = uinfo.get("picture")
+                return {
+                    "id": user_id,
+                    "name": name,
+                    "thumbnail": thumb,
+                    "authenticated": True
+                }
+        except:
+            pass
+            
+        # 3. Fallback
         return {
-            "name": "Authenticated User", 
+            "id": "web_user",
+            "name": "Authenticated User (No Channel)", 
             "thumbnail": None,
             "authenticated": True,
             "note": "Could not fetch channel profile"
