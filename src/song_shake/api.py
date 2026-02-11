@@ -50,6 +50,8 @@ class PlaylistResponse(BaseModel):
     thumbnails: List[Dict[str, Any]]
     count: Optional[Any] = None
     description: Optional[str] = None
+    last_processed: Optional[str] = None
+    last_status: Optional[str] = None
 
 class EnrichmentRequest(BaseModel):
     playlist_id: str
@@ -352,6 +354,22 @@ def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
             }
             playlists.insert(0, liked_music)
         
+        # Merge with history
+        try:
+            history = storage.get_all_history()
+            print(f"DEBUG: History keys: {list(history.keys())}")
+            for p in playlists:
+                pid = p.get('playlistId')
+                if pid in history:
+                    p['last_processed'] = history[pid].get('last_processed')
+                    p['last_status'] = history[pid].get('status')
+                    print(f"DEBUG: Merged history for {pid}: {p['last_processed']}")
+                else:
+                    # check if string/int mismatch?
+                    pass
+        except Exception as e:
+            print(f"Error merging history: {e}")
+            
         return playlists
     except Exception as e:
         # If 401, trying to refresh token?
@@ -363,8 +381,11 @@ def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
 
 def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str):
     try:
+        print(f"DEBUG: Starting enrichment for playlist={playlist_id} owner={owner} task={task_id}")
         enrichment_tasks[task_id]["status"] = "running"
         enrichment_tasks[task_id]["message"] = "Fetching tracks..."
+        enrichment_tasks[task_id]["tokens"] = 0
+        enrichment_tasks[task_id]["cost"] = 0
         
         tracks = playlist.get_tracks(playlist_id)
         if not tracks:
@@ -396,6 +417,7 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
                 if os.path.exists(filename):
                     os.remove(filename)
                 
+                is_error = bool(metadata.get('error'))
                 track_data = {
                     "videoId": video_id,
                     "title": title,
@@ -404,7 +426,8 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
                     "thumbnails": track.get('thumbnails', []),
                     "genres": metadata.get('genres', []),
                     "moods": metadata.get('moods', []),
-                    "status": "error" if metadata.get('error') else "success",
+                    "status": "error" if is_error else "success",
+                    "success": not is_error,
                     "error_message": metadata.get('error'),
                     "url": f"https://music.youtube.com/watch?v={video_id}",
                     "owner": owner
@@ -415,17 +438,72 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
                 
                 # Update task immediately so stream sees it
                 enrichment_tasks[task_id]["results"] = results
+                enrichment_tasks[task_id]["tokens"] = getattr(tracker, 'input_tokens', 0) + getattr(tracker, 'output_tokens', 0)
+                enrichment_tasks[task_id]["cost"] = tracker.get_cost() if hasattr(tracker, 'get_cost') else 0
                 
             except Exception as e:
                 print(f"Error processing {title}: {e}")
+                err_track_data = {
+                    "videoId": video_id,
+                    "title": title,
+                    "artists": artists,
+                    "album": track.get('album', {}).get('name') if track.get('album') else None,
+                    "thumbnails": track.get('thumbnails', []),
+                    "genres": [],
+                    "moods": [],
+                    "status": "error",
+                    "success": False,
+                    "error_message": str(e),
+                    "url": f"https://music.youtube.com/watch?v={video_id}",
+                    "owner": owner
+                }
+                storage.save_track(db, err_track_data)
+                results.append(err_track_data)
+                enrichment_tasks[task_id]["results"] = results
         
         enrichment_tasks[task_id]["status"] = "completed"
         enrichment_tasks[task_id]["message"] = "Enrichment complete"
         enrichment_tasks[task_id]["current"] = len(tracks)
+        enrichment_tasks[task_id]["tokens"] = getattr(tracker, 'input_tokens', 0) + getattr(tracker, 'output_tokens', 0)
+        enrichment_tasks[task_id]["cost"] = tracker.get_cost() if hasattr(tracker, 'get_cost') else 0
         
+        # Save history on success
+        try:
+            print(f"DEBUG: Saving history for {playlist_id} owner={owner}")
+            from datetime import datetime
+            storage.save_enrichment_history(
+                playlist_id, 
+                owner, 
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'item_count': len(results),
+                    'status': 'completed'
+                },
+                db
+            )
+        except Exception as h_err:
+            print(f"Failed to save history: {h_err}")
+
     except Exception as e:
         enrichment_tasks[task_id]["status"] = "error"
         enrichment_tasks[task_id]["message"] = str(e)
+        
+        # Save error history too?
+        try:
+            from datetime import datetime
+            storage.save_enrichment_history(
+                playlist_id, 
+                owner, 
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'item_count': 0,
+                    'status': 'error',
+                    'error': str(e)
+                },
+                db
+            )
+        except:
+            pass
 
 @app.post("/enrichment")
 def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTasks):
@@ -476,6 +554,8 @@ async def stream_enrichment_status(task_id: str):
                 "total": task["total"],
                 "current": task["current"],
                 "message": task["message"],
+                "tokens": task.get("tokens", 0),
+                "cost": task.get("cost", 0)
                 # Don't send full results every time if big, but for now it's fine
             })
             

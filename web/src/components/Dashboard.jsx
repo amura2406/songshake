@@ -4,6 +4,23 @@ import { getPlaylists, startEnrichment, getEnrichmentStatus, getEnrichmentStream
 import { Play, Activity, ListMusic, LogOut, Search, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+const getTimeAgo = (dateString) => {
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffInMs = now - date;
+  
+  const diffInMins = Math.floor(diffInMs / (1000 * 60));
+  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  const diffInWeeks = Math.floor(diffInDays / 7);
+
+  if (diffInWeeks > 0) return `${diffInWeeks}w ago`;
+  if (diffInDays > 0) return `${diffInDays}d ago`;
+  if (diffInHours > 0) return `${diffInHours}h ago`;
+  if (diffInMins > 0) return `${diffInMins}m ago`;
+  return 'just now';
+};
+
 const Dashboard = () => {
   const [playlists, setPlaylists] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -127,7 +144,15 @@ const Dashboard = () => {
                   </div>
                 </div>
                 <div className="p-6">
-                  <h3 className="text-xl font-bold truncate mb-2" title={playlist.title}>{playlist.title}</h3>
+                  <div className="flex items-start justify-between mb-2 gap-2">
+                     <h3 className="text-xl font-bold truncate flex-1" title={playlist.title}>{playlist.title}</h3>
+                     {playlist.last_processed && (
+                       <div className="shrink-0 flex items-center gap-1 px-2 py-0.5 bg-green-900/40 text-green-400 rounded text-[10px] border border-green-500/30 font-medium" title={`Processed: ${new Date(playlist.last_processed).toLocaleString()}`}>
+                         <Activity size={10} />
+                         <span>done {getTimeAgo(playlist.last_processed)}</span>
+                       </div>
+                     )}
+                  </div>
                   <div className="flex justify-between items-center text-neutral-400 text-sm">
                     {playlist.count ? <span>{playlist.count}</span> : <span>Unknown tracks</span>}
                     {playlist.description && <span className="truncate max-w-[150px]">{playlist.description}</span>}

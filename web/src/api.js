@@ -4,6 +4,21 @@ const api = axios.create({
   baseURL: '/', // Proxy handles /api and /auth
 });
 
+// Add interceptor for 401
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Redirect to login or dispatch cleanup
+      // Check if we are already on login page to avoid loops
+      if (!window.location.pathname.includes('/login')) {
+         window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const checkAuth = async () => {
   try {
     const res = await api.get('/auth/status');

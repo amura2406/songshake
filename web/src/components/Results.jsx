@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getSongs, getCurrentUser } from '../api';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Music, Disc, User, Tag, ChevronLeft, ChevronRight, Play, X } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Music, Disc, User, Tag, ChevronLeft, ChevronRight, Play, X, Activity } from 'lucide-react';
 
 const Results = () => {
   const [songs, setSongs] = useState([]);
@@ -9,12 +9,72 @@ const Results = () => {
   const [page, setPage] = useState(0);
   const [currentSong, setCurrentSong] = useState(null);
   const [user, setUser] = useState(null);
+  const [tags, setTags] = useState([]);
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [filteredSongs, setFilteredSongs] = useState([]);
   const limit = 50;
   const navigate = useNavigate();
 
   useEffect(() => {
     loadData();
   }, [page]);
+
+  useEffect(() => {
+    if (songs.length > 0) {
+      // Extract unique tags (genres + moods)
+      const allTags = [];
+      const seen = new Set();
+      
+      songs.forEach(s => {
+        if (s.genres) {
+          s.genres.forEach(g => {
+            if (!seen.has(g)) {
+              seen.add(g);
+              allTags.push({ type: 'genre', value: g });
+            }
+          });
+        }
+        if (s.moods) {
+          s.moods.forEach(m => {
+            if (!seen.has(m)) {
+              seen.add(m);
+              allTags.push({ type: 'mood', value: m });
+            }
+          });
+        }
+        const statusValue = s.success ? 'Success' : 'Failed';
+        if (!seen.has(statusValue)) {
+            seen.add(statusValue);
+            allTags.push({ type: 'status', value: statusValue });
+        }
+      });
+      setTags(allTags.sort((a, b) => a.value.localeCompare(b.value)));
+    }
+  }, [songs]);
+
+  useEffect(() => {
+    if (selectedTags.length === 0) {
+      setFilteredSongs(songs);
+    } else {
+      const filtered = songs.filter(song => {
+        const songTags = new Set([
+            ...(song.genres || []), 
+            ...(song.moods || []),
+            song.success ? 'Success' : 'Failed'
+        ]);
+        return selectedTags.every(tag => songTags.has(tag));
+      });
+      setFilteredSongs(filtered);
+    }
+  }, [selectedTags, songs]);
+
+  const toggleTag = (tag) => {
+    if (selectedTags.includes(tag)) {
+      setSelectedTags(selectedTags.filter(t => t !== tag));
+    } else {
+      setSelectedTags([...selectedTags, tag]);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -52,6 +112,110 @@ const Results = () => {
         <div className="w-24"></div> {/* Spacer */}
       </header>
 
+      <div className="max-w-7xl mx-auto mb-6 space-y-4">
+        {tags.length > 0 && (
+            <>
+              {/* Genres */}
+              {tags.some(t => t.type === 'genre') && (
+                <div className="p-4 bg-neutral-800/50 rounded-xl border border-neutral-700/50 backdrop-blur-sm">
+                    <div className="w-full flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-purple-400 flex items-center gap-2">
+                        <Disc size={14} /> Genres
+                        </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {tags.filter(t => t.type === 'genre').map((tag, i) => {
+                        const isSelected = selectedTags.includes(tag.value);
+                        return (
+                            <button
+                            key={`g-${i}`}
+                            onClick={() => toggleTag(tag.value)}
+                            className={`
+                                px-3 py-1.5 text-xs rounded-full transition-all border
+                                ${isSelected 
+                                ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-900/50'
+                                : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:bg-neutral-750 hover:border-neutral-600'}
+                            `}
+                            >
+                            {tag.value}
+                            </button>
+                        );
+                        })}
+                    </div>
+                </div>
+              )}
+
+              {/* Status */}
+              {tags.some(t => t.type === 'status') && (
+                <div className="p-4 bg-neutral-800/50 rounded-xl border border-neutral-700/50 backdrop-blur-sm">
+                    <div className="w-full flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-red-400 flex items-center gap-2">
+                        <Activity size={14} /> Status
+                        </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {tags.filter(t => t.type === 'status').map((tag, i) => {
+                        const isSelected = selectedTags.includes(tag.value);
+                        return (
+                            <button
+                            key={`s-${i}`}
+                            onClick={() => toggleTag(tag.value)}
+                            className={`
+                                px-3 py-1.5 text-xs rounded-full transition-all border
+                                ${isSelected 
+                                ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/50'
+                                : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:bg-neutral-750 hover:border-neutral-600'}
+                            `}
+                            >
+                            {tag.value}
+                            </button>
+                        );
+                        })}
+                    </div>
+                </div>
+              )}
+
+              {/* Moods */}
+              {tags.some(t => t.type === 'mood') && (
+                <div className="p-4 bg-neutral-800/50 rounded-xl border border-neutral-700/50 backdrop-blur-sm">
+                    <div className="w-full flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-pink-400 flex items-center gap-2">
+                        <Activity size={14} /> Moods
+                        </span>
+                        {selectedTags.length > 0 && (
+                            <button 
+                            onClick={() => setSelectedTags([])}
+                            className="text-xs text-neutral-500 hover:text-white transition-colors"
+                            >
+                            Clear filters
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {tags.filter(t => t.type === 'mood').map((tag, i) => {
+                        const isSelected = selectedTags.includes(tag.value);
+                        return (
+                            <button
+                            key={`m-${i}`}
+                            onClick={() => toggleTag(tag.value)}
+                            className={`
+                                px-3 py-1.5 text-xs rounded-full transition-all border
+                                ${isSelected 
+                                ? 'bg-pink-600 border-pink-500 text-white shadow-lg shadow-pink-900/50'
+                                : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:bg-neutral-750 hover:border-neutral-600'}
+                            `}
+                            >
+                            {tag.value}
+                            </button>
+                        );
+                        })}
+                    </div>
+                </div>
+              )}
+          </>
+        )}
+      </div>
+
       <div className="max-w-7xl mx-auto">
         {loading ? (
              <div className="space-y-4">
@@ -62,7 +226,12 @@ const Results = () => {
         ) : (
           <>
             <div className="grid gap-4">
-              {songs.map((song) => (
+              {filteredSongs.length === 0 && !loading && (
+                 <div className="text-center py-20 text-neutral-500">
+                    <p>No songs found matching your filters.</p>
+                 </div>
+              )}
+              {filteredSongs.map((song) => (
                 <div 
                   key={song.videoId} 
                   className="bg-neutral-800 p-4 rounded-xl border border-neutral-700 hover:border-neutral-600 transition-colors flex flex-col md:flex-row gap-6 items-start md:items-center group"
@@ -107,20 +276,29 @@ const Results = () => {
                   </div>
 
                   <div className="flex flex-col gap-2 min-w-[200px]">
-                    <div className="flex flex-wrap gap-2">
-                      {song.genres?.map((genre, i) => (
-                        <span key={i} className="px-2 py-1 bg-purple-900/30 text-purple-300 text-xs rounded-md border border-purple-500/20 whitespace-nowrap">
-                          {genre}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {song.moods?.map((mood, i) => (
-                        <span key={i} className="px-2 py-1 bg-pink-900/30 text-pink-300 text-xs rounded-md border border-pink-500/20 whitespace-nowrap">
-                          {mood}
-                        </span>
-                      ))}
-                    </div>
+                    {song.success === false ? (
+                      <div className="px-3 py-2 bg-red-900/40 border border-red-500/50 rounded-lg text-red-200 text-sm flex items-center gap-2">
+                         <X size={16} className="text-red-400" />
+                         Failed to enrich
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          {song.genres?.map((genre, i) => (
+                            <span key={i} className="px-2 py-1 bg-purple-900/30 text-purple-300 text-xs rounded-md border border-purple-500/20 whitespace-nowrap">
+                              {genre}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {song.moods?.map((mood, i) => (
+                            <span key={i} className="px-2 py-1 bg-pink-900/30 text-pink-300 text-xs rounded-md border border-pink-500/20 whitespace-nowrap">
+                              {mood}
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}

@@ -16,7 +16,9 @@ This tool takes your YouTube Music playlists and enriches them with **Genres** a
     -   Genres (e.g., Pop, Indie, Rock)
     -   Moods (e.g., Energetic, Melancholic, Chill)
 -   **Persistent Storage**: Saves enriched data to a local `songs.db` (TinyDB).
--   **Cost Tracking**: Tracks Gemini API token usage and estimated cost.
+-   **Resilient Processing**: Tracks that fail to enrich are still saved and visually flagged, ensuring complete playlist visibility.
+-   **Cost Tracking**: Tracks Gemini API token usage and estimated cost in real-time during enrichment.
+-   **Smart Filtering**: Filter by specific Genres, Moods, or Enrichment Status directly on the Results page.
 
 ## Workflow
 
@@ -173,10 +175,10 @@ A FastAPI-based server that exposes the core logic to the web.
 A modern, responsive React application.
 - **Port**: 5173 (Vite)
 - **Features**:
-    - "Login with Google" integration.
-    - Dashboard with playlist selection.
-    - Real-time progress visualization.
-    - Rich, interactive results view with playback.
+    - "Login with Google" integration with graceful session expiration handling.
+    - Dashboard with playlist selection, processing history, and relative time badges.
+    - Real-time progress visualization with live API token and cost tracking.
+    - Rich, interactive results view with playback and advanced tag/status filtering.
 
 ## ⚠️ Gotchas & Pitfalls
 

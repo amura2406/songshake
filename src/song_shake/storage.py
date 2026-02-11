@@ -16,13 +16,41 @@ def save_track(db: TinyDB, track_data: dict):
     track_data['owner'] = owner
     
     if video_id:
-        # Update if videoId AND owner match (since different owners might have same song? 
-        # Actually same song is same song, but maybe we want to separate collections?
-        # The requirement says "songs DB now has to include "owner" as to who is logged in at the time, since it will only show result for the particular logged in user."
-        # So yes, we should probably scope by owner.
         db.upsert(track_data, (Song.videoId == video_id) & (Song.owner == owner))
     else:
         db.insert(track_data)
+
+def save_enrichment_history(playlist_id: str, owner: str, metadata: dict, db: TinyDB = None):
+    """Save enrichment history for a playlist."""
+    if db is None:
+        db = init_db()
+    
+    history_table = db.table('history')
+    History = Query()
+    
+    record = {
+        'playlistId': playlist_id,
+        'owner': owner,
+        'last_processed': metadata.get('timestamp'),
+        'item_count': metadata.get('item_count', 0),
+        'status': metadata.get('status', 'completed')
+    }
+    # Include error if present
+    if 'error' in metadata:
+        record['error'] = metadata['error']
+    
+    history_table.upsert(record, (History.playlistId == playlist_id) & (History.owner == owner))
+
+def get_enrichment_history(owner: str, db: TinyDB = None) -> dict:
+    """Get enrichment history for all playlists of an owner. Returns dict keyed by playlistId."""
+    if db is None:
+        db = init_db()
+    
+    history_table = db.table('history')
+    History = Query()
+    records = history_table.search(History.owner == owner)
+    
+    return {r['playlistId']: r for r in records}
 
 def wipe_db(path: str = STORAGE_FILE):
     """Wipe the database file."""
@@ -37,3 +65,10 @@ def get_all_tracks(db: TinyDB = None, owner: str = 'local') -> list:
         db = init_db()
     Song = Query()
     return db.search(Song.owner == owner)
+
+def get_all_history(db: TinyDB = None) -> dict:
+    """Get enrichment history for all owners. Returns dict keyed by playlistId (latest wins if duplicates)."""
+    if db is None:
+        db = init_db()
+    history_table = db.table('history')
+    return {r['playlistId']: r for r in history_table.all()}

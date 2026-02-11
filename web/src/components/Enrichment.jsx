@@ -103,6 +103,27 @@ const Enrichment = () => {
               transition={{ ease: "linear" }}
             />
           </div>
+          
+          {status.tokens !== undefined && (
+            <div className="mt-6 grid grid-cols-2 gap-4">
+              <div className="bg-neutral-900/50 rounded-xl p-4 border border-neutral-700 flex flex-col items-center justify-center relative overflow-hidden group">
+                <div className="absolute inset-0 bg-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <span className="text-xs text-neutral-400 uppercase tracking-wider mb-1 font-semibold z-10">Tokens Used</span>
+                <span className="text-2xl font-bold text-purple-400 font-mono z-10 transition-all duration-300">
+                  {status.tokens.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-neutral-900/50 rounded-xl p-4 border border-neutral-700 flex flex-col items-center justify-center relative overflow-hidden group">
+                <div className="absolute inset-0 bg-pink-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <span className="text-xs text-neutral-400 uppercase tracking-wider mb-1 font-semibold z-10">
+                  {status.status === 'completed' ? 'Total Cost' : 'Est. Cost'}
+                </span>
+                <span className="text-2xl font-bold text-pink-400 font-mono z-10 transition-all duration-300">
+                  ${(status.cost || 0).toFixed(5)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-neutral-900 rounded-xl p-6 border border-neutral-700 mb-8 font-mono text-sm text-neutral-300">
