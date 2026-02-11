@@ -1,75 +1,50 @@
 @import "tailwindcss";
 
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@theme {
+  --color-primary: #af25f4;
+  --color-background-light: #f7f5f8;
+  --color-background-dark: #1c1022;
+  --color-surface-dark: #2a1b32;
+  --color-surface-darker: #150b1a;
+  --font-display: "Spline Sans", sans-serif;
+  --shadow-neon: 0 0 10px rgba(175, 37, 244, 0.5);
+  --shadow-neon-strong: 0 0 20px rgba(175, 37, 244, 0.7);
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #1c1022; 
+}
+::-webkit-scrollbar-thumb {
+    background: #3f2e4a; 
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #af25f4; 
+}
+.text-gradient {
+    background: linear-gradient(to right, #af25f4, #d946ef);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.eq-bar {
+    width: 3px;
+    background: #af25f4;
+    animation: bounce 1s infinite ease-in-out;
+}
+.eq-bar:nth-child(2) { animation-delay: 0.1s; }
+.eq-bar:nth-child(3) { animation-delay: 0.2s; }
+.eq-bar:nth-child(4) { animation-delay: 0.3s; }
+@keyframes bounce {
+    0%, 100% { height: 4px; }
+    50% { height: 16px; }
 }
 
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-
-button:hover {
-  border-color: #646cff;
-}
-
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-
-  a:hover {
-    color: #747bff;
-  }
-
-  button {
-    background-color: #f9f9f9;
+@layer base {
+  body {
+    @apply bg-background-light dark:bg-background-dark font-display text-slate-800 dark:text-slate-200 antialiased;
   }
 }

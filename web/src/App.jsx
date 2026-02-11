@@ -5,6 +5,7 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Enrichment from './components/Enrichment';
 import Results from './components/Results';
+import Layout from './components/Layout';
 
 const PrivateRoute = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
@@ -18,10 +19,10 @@ const PrivateRoute = ({ children }) => {
   }, []);
 
   if (isAuthenticated === null) {
-    return <div className="min-h-screen bg-neutral-900 flex items-center justify-center text-white">Loading...</div>;
+    return <div className="min-h-screen bg-background-dark flex items-center justify-center text-white">Loading...</div>;
   }
 
-  return isAuthenticated ? children : <Navigate to="/login" />;
+  return isAuthenticated ? <Layout>{children}</Layout> : <Navigate to="/login" />;
 };
 
 function App() {

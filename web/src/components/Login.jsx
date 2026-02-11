@@ -97,17 +97,12 @@ const Login = () => {
   }, [polling, authData, clientId, clientSecret, navigate]);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Elements */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[100px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 rounded-full blur-[100px]" />
-      </div>
-
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-neutral-800 shadow-2xl relative z-10 overflow-hidden"
+    <div className="min-h-screen bg-background-dark flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.3 }}
+        className="max-w-md w-full bg-surface-darker/80 rounded-2xl p-8 shadow-neon border border-primary/20 backdrop-blur-sm"
       >
         <div className="p-8 pb-0 text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-500/20">
@@ -166,7 +161,7 @@ const Login = () => {
                           type="text"
                           value={clientId}
                           onChange={(e) => setClientId(e.target.value)}
-                          className="w-full bg-neutral-800/80 border border-neutral-700 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder-neutral-500"
+                          className="w-full bg-surface-dark border border-white/5 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder-slate-500"
                           placeholder="Client ID (e.g. 123...apps.googleusercontent.com)"
                           required
                         />
@@ -174,7 +169,7 @@ const Login = () => {
                           type="password"
                           value={clientSecret}
                           onChange={(e) => setClientSecret(e.target.value)}
-                          className="w-full bg-neutral-800/80 border border-neutral-700 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder-neutral-500"
+                          className="w-full bg-surface-dark border border-white/5 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder-slate-500"
                           placeholder="Client Secret (e.g. GOCSPX-...)"
                           required
                         />
@@ -193,8 +188,8 @@ const Login = () => {
                     {useEnvAuth && <p className="text-xs text-neutral-500 text-center">Redirects to Google for authentication</p>}
                   </form>
                 ) : (
-                  <div className="space-y-6 text-center">
-                    <div className="bg-neutral-800/50 p-6 rounded-xl border border-neutral-700/50">
+                    <div className="mt-8 space-y-6">
+                      <div className="bg-surface-dark p-6 rounded-xl border border-white/5">
                       <p className="text-neutral-400 text-sm mb-4">Enter this code on the Google validation page:</p>
                       <div className="text-3xl font-mono font-bold tracking-[0.2em] text-purple-400 select-all cursor-pointer hover:text-purple-300 transition-colors" onClick={() => navigator.clipboard.writeText(authData.user_code)}>
                         {authData.user_code}
@@ -245,7 +240,7 @@ const Login = () => {
                   <button
                     onClick={handleManualLogin}
                     disabled={loading}
-                    className="w-full bg-neutral-700 hover:bg-neutral-600 text-white font-semibold py-3 rounded-lg disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                    className="w-full bg-primary/20 hover:bg-primary text-primary hover:text-white font-semibold py-3 rounded-lg disabled:opacity-50 transition-all flex items-center justify-center gap-2 border border-primary/30 shadow-neon"
                   >
                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
                   Login with Headers

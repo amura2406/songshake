@@ -63,52 +63,17 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-200 p-8 pb-32">
-      <header className="max-w-7xl mx-auto mb-12 flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent">
-            Song Shake
-          </h1>
-          <p className="text-neutral-400 mt-2">Enrich your music library with AI</p>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {user && (
-            <div className="flex items-center gap-3 bg-neutral-800 py-2 px-4 rounded-full border border-neutral-700">
-              {user.thumbnail ? (
-                <img src={user.thumbnail} alt={user.name} className="w-8 h-8 rounded-full" />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center">
-                  <User size={16} />
-                </div>
-              )}
-              <span className="text-sm font-medium text-white">{user.name}</span>
-            </div>
-          )}
-          <button
-            onClick={handleLogout}
-            className="text-neutral-400 hover:text-white transition-colors p-2"
-            title="Logout"
-          >
-            <LogOut size={20} />
-          </button>
-          <button
-            onClick={() => navigate('/results')}
-            className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors border border-neutral-700"
-          >
-            <ListMusic size={18} />
-            <span>View Library</span>
-          </button>
-        </div>
-      </header>
-
+    <div className="p-6">
       <div className="max-w-7xl mx-auto">
-        <h2 className="text-3xl font-bold mb-8">Select a Playlist to Enrich</h2>
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-white mb-2">Select a Playlist to Enrich</h2>
+          <p className="text-slate-400 text-sm">Choose a playlist from your library to start the AI enrichment process.</p>
+        </div>
         
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-48 bg-neutral-800 rounded-xl animate-pulse" />
+              <div key={i} className="h-48 bg-surface-dark rounded-xl animate-pulse border border-white/5" />
             ))}
           </div>
         ) : (
@@ -119,9 +84,9 @@ const Dashboard = () => {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 whileHover={{ y: -5 }}
-                className="bg-neutral-800 rounded-xl overflow-hidden border border-neutral-700 group hover:border-purple-500/50 transition-all shadow-lg hover:shadow-purple-500/10"
+                className="bg-surface-dark rounded-xl overflow-hidden border border-white/5 group hover:border-primary/50 transition-all shadow-lg hover:shadow-neon"
               >
-                <div className="bg-neutral-700 h-48 relative overflow-hidden">
+                <div className="bg-surface-darker h-48 relative overflow-hidden">
                   {playlist.thumbnails?.[0]?.url ? (
                     <img 
                       src={playlist.thumbnails[playlist.thumbnails.length - 1].url} 
@@ -136,7 +101,7 @@ const Dashboard = () => {
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
                     <button
                       onClick={() => handleStartEnrichment(playlist.playlistId)}
-                      className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 transform scale-90 group-hover:scale-100 transition-transform"
+                      className="bg-primary hover:bg-fuchsia-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 transform scale-90 group-hover:scale-100 transition-transform shadow-neon"
                     >
                       <Play size={20} fill="currentColor" />
                       Idenfity Songs
@@ -145,16 +110,16 @@ const Dashboard = () => {
                 </div>
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-2 gap-2">
-                     <h3 className="text-xl font-bold truncate flex-1" title={playlist.title}>{playlist.title}</h3>
+                     <h3 className="text-xl font-bold truncate flex-1 text-white group-hover:text-primary transition-colors" title={playlist.title}>{playlist.title}</h3>
                      {playlist.last_processed && (
-                       <div className="shrink-0 flex items-center gap-1 px-2 py-0.5 bg-green-900/40 text-green-400 rounded text-[10px] border border-green-500/30 font-medium" title={`Processed: ${new Date(playlist.last_processed).toLocaleString()}`}>
+                       <div className="shrink-0 flex items-center gap-1 px-2 py-0.5 bg-green-500/10 text-green-400 rounded text-[10px] border border-green-500/20 font-medium" title={`Processed: ${new Date(playlist.last_processed).toLocaleString()}`}>
                          <Activity size={10} />
                          <span>done {getTimeAgo(playlist.last_processed)}</span>
                        </div>
                      )}
                   </div>
-                  <div className="flex justify-between items-center text-neutral-400 text-sm">
-                    {playlist.count ? <span>{playlist.count}</span> : <span>Unknown tracks</span>}
+                  <div className="flex justify-between items-center text-slate-400 text-sm">
+                    {playlist.count ? <span>{playlist.count} tracks</span> : <span>Unknown tracks</span>}
                     {playlist.description && <span className="truncate max-w-[150px]">{playlist.description}</span>}
                   </div>
                 </div>
