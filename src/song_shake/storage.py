@@ -66,6 +66,45 @@ def get_all_tracks(db: TinyDB = None, owner: str = 'local') -> list:
     Song = Query()
     return db.search(Song.owner == owner)
 
+def get_tags(db: TinyDB = None, owner: str = 'local') -> dict:
+    """Get all unique moods and genres from the database, sorted by count."""
+    if db is None:
+        db = init_db()
+    Song = Query()
+    tracks = db.search(Song.owner == owner)
+
+    tags = {}
+    success_count = 0
+    failed_count = 0
+    
+    for track in tracks:
+        # Count statuses
+        is_success = track.get('success', track.get('status') == 'success')
+        if is_success:
+            success_count += 1
+        else:
+            failed_count += 1
+
+        for genre in track.get('genres', []):
+            tags[genre] = tags.get(genre, {'type': 'genre', 'count': 0})
+            tags[genre]['count'] += 1
+        for mood in track.get('moods', []):
+            tags[mood] = tags.get(mood, {'type': 'mood', 'count': 0})
+            tags[mood]['count'] += 1
+
+    # Convert to sorted list
+    result = []
+    for name, data in tags.items():
+        result.append({'name': name, 'type': data['type'], 'count': data['count']})
+    
+    result.sort(key=lambda x: x['count'], reverse=True)
+    
+    # Prepend statuses
+    result.insert(0, {'name': 'Failed', 'type': 'status', 'count': failed_count})
+    result.insert(0, {'name': 'Success', 'type': 'status', 'count': success_count})
+    
+    return result
+
 def get_all_history(db: TinyDB = None) -> dict:
     """Get enrichment history for all owners. Returns dict keyed by playlistId (latest wins if duplicates)."""
     if db is None:

@@ -570,13 +570,35 @@ async def stream_enrichment_status(task_id: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/songs", response_model=List[Song])
-def get_songs(owner: str = "web_user", skip: int = 0, limit: int = 50):
-    print(f"DEBUG: get_songs requested for owner='{owner}' skip={skip} limit={limit}")
+def get_songs(owner: str = "web_user", skip: int = 0, limit: int = 50, tags: Optional[str] = None):
+    print(f"DEBUG: get_songs requested for owner='{owner}' skip={skip} limit={limit} tags='{tags}'")
     all_tracks = storage.get_all_tracks(owner=owner)
-    print(f"DEBUG: storage returned {len(all_tracks)} tracks")
-    if all_tracks:
-        print(f"DEBUG: First track sample: {all_tracks[0]}")
+    
+    if tags:
+        filter_tags = set([t.strip() for t in tags.split(',') if t.strip()])
+        filtered_tracks = []
+        for track in all_tracks:
+            track_tags = set(track.get('genres', []) + track.get('moods', []))
+            if 'Success' in filter_tags and getattr(track, 'success', track.get('status') == 'success'):
+                track_tags.add('Success')
+            if 'Failed' in filter_tags and not getattr(track, 'success', track.get('status') == 'success'):
+                track_tags.add('Failed')
+                
+            if filter_tags.intersection(track_tags):
+                filtered_tracks.append(track)
+        all_tracks = filtered_tracks
+        
+    print(f"DEBUG: returning {len(all_tracks)} tracks after filtering")
     return all_tracks[skip : skip + limit]
+
+class TagResponse(BaseModel):
+    name: str
+    type: str
+    count: int
+
+@app.get("/tags", response_model=List[TagResponse])
+def get_tags(owner: str = "web_user"):
+    return storage.get_tags(owner=owner)
 
 if __name__ == "__main__":
     uvicorn.run("song_shake.api:app", host="0.0.0.0", port=8000, reload=True)

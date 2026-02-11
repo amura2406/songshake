@@ -1,27 +1,41 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { getCurrentUser, logoutUser } from '../api';
+import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
+import { getCurrentUser, logoutUser, getTags } from '../api';
 
 const Layout = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [tags, setTags] = useState({ genres: [], moods: [] });
+  const [showAllGenres, setShowAllGenres] = useState(false);
+  const [showAllMoods, setShowAllMoods] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    const loadUser = async () => {
+    const loadData = async () => {
       try {
         const u = await getCurrentUser();
         setUser(u);
+
+        if (u) {
+          const fetchedTags = await getTags(u.id);
+          const genres = fetchedTags.filter(t => t.type === 'genre');
+          const moods = fetchedTags.filter(t => t.type === 'mood');
+          setTags({ genres, moods });
+        }
       } catch (error) {
-        console.error("Failed to load user", error);
+        console.error("Failed to load user or tags", error);
       }
     };
-    loadUser();
-  }, []);
+    loadData();
+  }, [location.pathname]); // Reload tags if we navigate around
 
   const handleLogout = async () => {
     await logoutUser();
     window.location.href = '/';
+  };
+
+  const handleTagClick = (tagValue) => {
+    navigate(`/results?tags=${encodeURIComponent(tagValue)}`);
   };
 
   const menuItems = [
@@ -106,55 +120,60 @@ const Layout = ({ children }) => {
           <div className="px-6 mb-8">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Moods</h3>
             <nav className="space-y-1">
-              {/* Mock placeholders to match design */}
-              <div className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
-                <span className="flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></span>
-                  Chill
-                </span>
-              </div>
-              <div className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
-                <span className="flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]"></span>
-                  Energetic
-                </span>
-              </div>
-              <div className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
-                <span className="flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
-                  Aggressive
-                </span>
-              </div>
-              <div className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
-                <span className="flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></span>
-                  Focus
-                </span>
-              </div>
+              {(showAllMoods ? tags.moods : tags.moods.slice(0, 7)).map((mood, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => handleTagClick(mood.name)}
+                  className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-3">
+                    <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(236,72,153,0.8)] ${idx % 4 === 0 ? 'bg-pink-500' : idx % 4 === 1 ? 'bg-purple-500' : idx % 4 === 2 ? 'bg-blue-500' : 'bg-green-500'}`}></span>
+                    {mood.name}
+                  </span>
+                  <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{mood.count}</span>
+                </div>
+              ))}
+              {tags.moods.length > 7 && (
+                <button
+                  onClick={() => setShowAllMoods(!showAllMoods)}
+                  className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
+                >
+                  {showAllMoods ? 'Show less' : `Show all (${tags.moods.length})`}
+                </button>
+              )}
+              {tags.moods.length === 0 && (
+                <div className="px-3 py-2 text-sm text-slate-600 italic">No moods found</div>
+              )}
             </nav>
           </div>
 
           <div className="px-6 mb-8">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Genres</h3>
             <nav className="space-y-1">
-              <div className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
-                <span className="flex items-center gap-3">
-                  <span className="material-icons text-xs">radio</span>
-                  Synthwave
-                </span>
-              </div>
-              <div className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
-                <span className="flex items-center gap-3">
-                  <span className="material-icons text-xs">settings_input_component</span>
-                  Techno
-                </span>
-              </div>
-              <div className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer">
-                <span className="flex items-center gap-3">
-                  <span className="material-icons text-xs">blur_on</span>
-                  Ambient
-                </span>
-              </div>
+              {(showAllGenres ? tags.genres : tags.genres.slice(0, 7)).map((genre, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => handleTagClick(genre.name)}
+                  className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-3">
+                    <span className="material-icons text-xs opacity-70">album</span>
+                    {genre.name}
+                  </span>
+                  <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{genre.count}</span>
+                </div>
+              ))}
+              {tags.genres.length > 7 && (
+                <button
+                  onClick={() => setShowAllGenres(!showAllGenres)}
+                  className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
+                >
+                  {showAllGenres ? 'Show less' : `Show all (${tags.genres.length})`}
+                </button>
+              )}
+              {tags.genres.length === 0 && (
+                <div className="px-3 py-2 text-sm text-slate-600 italic">No genres found</div>
+              )}
             </nav>
           </div>
         </aside>

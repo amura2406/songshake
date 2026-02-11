@@ -94,8 +94,13 @@ export const getEnrichmentStatus = async (taskId) => {
 // Helper to get stream URL
 export const getEnrichmentStreamUrl = (taskId) => `/api/enrichment/stream/${taskId}`;
 
-export const getSongs = async (owner = 'web_user', skip = 0, limit = 50) => {
-  const res = await api.get('/api/songs', { params: { owner, skip, limit } });
+export const getTags = async (owner) => {
+  const res = await api.get('/api/tags', { params: { owner } });
+  return res.data;
+};
+
+export const getSongs = async (owner, skip = 0, limit = 50, tags = null) => {
+  const res = await api.get('/api/songs', { params: { owner, skip, limit, tags } });
   return res.data;
 };
 

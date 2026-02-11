@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { getSongs, getCurrentUser } from '../api';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { getSongs, getCurrentUser, getTags } from '../api';
 import { Play, Pause, FastForward, Rewind, Volume2 } from 'lucide-react';
 import YouTube from 'react-youtube';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const Results = () => {
   const [songs, setSongs] = useState([]);
@@ -10,6 +12,7 @@ const Results = () => {
   const [currentSong, setCurrentSong] = useState(null);
   const [tags, setTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
+  const [activeDropdown, setActiveDropdown] = useState(null);
   const [filteredSongs, setFilteredSongs] = useState([]);
   const [playerContext, setPlayerContext] = useState(null);
   const [playbackProgress, setPlaybackProgress] = useState(0);
@@ -17,9 +20,27 @@ const Results = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const limit = 50;
 
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Parse URL query parameter
+  const queryTags = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const ts = params.get('tags');
+    return ts ? ts.split(',') : [];
+  }, [location.search]);
+
+  // Sync initial state from URL on mount/url change
+  useEffect(() => {
+    setSelectedTags(queryTags);
+    setPage(0); // Reset page on filter change
+  }, [queryTags]);
+
+
   useEffect(() => {
     loadData();
-  }, [page]);
+    loadTags();
+  }, [page, queryTags]); // Reload when page or tags query change
 
   useEffect(() => {
     let interval;
@@ -37,58 +58,25 @@ const Results = () => {
     return () => clearInterval(interval);
   }, [playerContext, isPlaying]);
 
-  useEffect(() => {
-    if (songs.length > 0) {
-      // Extract unique tags (genres + moods)
-      const allTags = [];
-      const seen = new Set();
-      
-      songs.forEach(s => {
-        if (s.genres) {
-          s.genres.forEach(g => {
-            if (!seen.has(g)) {
-              seen.add(g);
-              allTags.push({ type: 'genre', value: g });
-            }
-          });
-        }
-        if (s.moods) {
-          s.moods.forEach(m => {
-            if (!seen.has(m)) {
-              seen.add(m);
-              allTags.push({ type: 'mood', value: m });
-            }
-          });
-        }
-        const statusValue = s.success ? 'Success' : 'Failed';
-        if (!seen.has(statusValue)) {
-            seen.add(statusValue);
-            allTags.push({ type: 'status', value: statusValue });
-        }
-      });
-      setTags(allTags.sort((a, b) => a.value.localeCompare(b.value)));
-    }
-  }, [songs]);
+  const loadTags = async () => {
+    try {
+      const u = await getCurrentUser();
+      if (u) {
+        const fetchedTags = await getTags(u.id);
+        const transformedTags = fetchedTags.map(t => ({ type: t.type, value: t.name, count: t.count }));
 
-  useEffect(() => {
-    if (selectedTags.length === 0) {
-      setFilteredSongs(songs);
-    } else {
-      const filtered = songs.filter(s => {
-        let match = false;
-        if (selectedTags.includes('Success') && s.success) match = true;
-        if (selectedTags.includes('Failed') && !s.success) match = true;
-        if (!match && s.genres) {
-          if (s.genres.some(g => selectedTags.includes(g))) match = true;
-        }
-        if (!match && s.moods) {
-          if (s.moods.some(m => selectedTags.includes(m))) match = true;
-        }
-        return match;
-      });
-      setFilteredSongs(filtered);
+        // Ensure that URL tags are also present, even if count is 0
+        queryTags.forEach(qt => {
+          if (!transformedTags.some(t => t.value === qt)) {
+            transformedTags.push({ type: 'unknown', value: qt });
+          }
+        });
+        setTags(transformedTags);
+      }
+    } catch (error) {
+      console.error("Failed to fetch available filter tags", error);
     }
-  }, [selectedTags, songs]);
+  };
 
   const loadData = async () => {
     try {
@@ -96,10 +84,12 @@ const Results = () => {
       const u = await getCurrentUser();
 
       const ownerId = u ? u.id : 'web_user';
-      const data = await getSongs(ownerId, page * limit, limit);
+      const tagsString = queryTags.length > 0 ? queryTags.join(',') : null;
+      const data = await getSongs(ownerId, page * limit, limit, tagsString);
       // Filter out songs without valid data
       const validSongs = data.filter(s => s.videoId);
       setSongs(validSongs);
+      setFilteredSongs(validSongs); // Backend handles filtering now
     } catch (error) {
       console.error("Failed to load songs", error);
     } finally {
@@ -108,11 +98,20 @@ const Results = () => {
   };
 
   const toggleTag = (tagValue) => {
-    setSelectedTags(prev =>
-      prev.includes(tagValue)
-        ? prev.filter(t => t !== tagValue)
-        : [...prev, tagValue]
-    );
+    let newTags;
+    if (selectedTags.includes(tagValue)) {
+      newTags = selectedTags.filter(t => t !== tagValue);
+    } else {
+      newTags = [...selectedTags, tagValue];
+    }
+
+    const params = new URLSearchParams(location.search);
+    if (newTags.length > 0) {
+      params.set('tags', newTags.join(','));
+    } else {
+      params.delete('tags');
+    }
+    navigate(`/results?${params.toString()}`);
   };
 
   const formatDuration = (ms) => {
@@ -175,44 +174,101 @@ const Results = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto pb-32 scroll-smooth bg-surface-darker/20">
+    <div className="flex-1 overflow-y-auto pb-32 scroll-smooth bg-surface-darker/20 relative">
       <div className="px-6 py-4">
 
-        {/* Filters */}
+        {/* Minimal Toolbar Filters */}
         {tags.length > 0 && (
-          <div className="mb-6 flex flex-wrap gap-2">
-            {tags.map((tag, i) => {
-              const isActive = selectedTags.includes(tag.value);
-              const baseColor = tag.type === 'genre'
-                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                : tag.type === 'status'
-                  ? (tag.value === 'Success' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20')
-                  : 'bg-pink-500/10 text-pink-400 border-pink-500/20';
+          <div className="mb-6">
+            {/* Toolbar */}
+            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+              <div className="flex flex-wrap items-center gap-6">
+                {['genre', 'mood', 'status'].map(type => {
+                  const availableTags = tags.filter(t => t.type === type);
+                  if (availableTags.length === 0) return null;
 
-              const activeColor = tag.type === 'genre'
-                ? 'bg-purple-600 text-white border-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]'
-                : tag.type === 'status'
-                  ? (tag.value === 'Success' ? 'bg-green-600 text-white border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-red-600 text-white border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]')
-                  : 'bg-pink-600 text-white border-pink-500 shadow-[0_0_10px_rgba(236,72,153,0.5)]';
+                  const hasActive = selectedTags.some(t => availableTags.find(tag => tag.value === t));
+                  const isActiveDropdown = activeDropdown === type;
 
-              return (
-                <button
-                  key={i}
-                  onClick={() => toggleTag(tag.value)}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium border transition-all ${isActive ? activeColor : baseColor}`}
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setActiveDropdown(isActiveDropdown ? null : type)}
+                      className={`flex items-center gap-1 text-sm font-semibold transition-colors relative ${isActiveDropdown || hasActive ? 'text-white' : 'text-slate-400 hover:text-white capitalize'}`}
+                    >
+                      <span className="capitalize">{type}</span>
+                      <span className="material-icons text-[16px] leading-none mb-0.5">{isActiveDropdown ? 'expand_less' : 'expand_more'}</span>
+                      {hasActive && (
+                        <span className="absolute -top-1 -right-2 w-1.5 h-1.5 rounded-full bg-white"></span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right Controls */}
+              <div className="flex items-center gap-4">
+                {selectedTags.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const params = new URLSearchParams(location.search);
+                      params.delete('tags');
+                      navigate(`/results?${params.toString()}`);
+                    }}
+                    className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white transition-all bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg"
+                  >
+                    <span className="material-icons text-sm">clear_all</span> Clear Filters
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Expanded Panel (Inline) */}
+            <AnimatePresence>
+              {activeDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                  animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
+                  exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="pb-2 relative overflow-hidden"
                 >
-                  {tag.value}
-                </button>
-              );
-            })}
-            {selectedTags.length > 0 && (
-              <button
-                onClick={() => setSelectedTags([])}
-                className="px-3 py-1 rounded-lg text-xs font-medium border border-slate-500/20 text-slate-400 hover:text-white hover:bg-white/5 transition-all"
-              >
-                Clear Filters
-              </button>
-            )}
+                  <button onClick={() => setActiveDropdown(null)} className="absolute right-0 top-1 text-xs font-medium text-slate-400 hover:text-white transition-colors px-2 py-1 z-10">
+                    Close
+                  </button>
+
+                  <div className="flex flex-wrap gap-2.5 pr-14 pt-2">
+                    {tags.filter(t => t.type === activeDropdown).map((tag, i) => {
+                      const isActive = selectedTags.includes(tag.value);
+
+                      let activeClass = 'bg-white text-black border-white hover:bg-neutral-200';
+                      if (tag.type === 'genre') {
+                        activeClass = 'bg-gradient-to-r from-indigo-500 via-purple-500 to-fuchsia-500 text-white border-transparent shadow-[0_0_15px_rgba(168,85,247,0.6)] font-semibold flex-1 sm:flex-none';
+                      } else if (tag.type === 'mood') {
+                        activeClass = 'bg-gradient-to-r from-red-500 via-rose-500 to-pink-500 text-white border-transparent shadow-[0_0_15px_rgba(244,63,94,0.6)] font-semibold flex-1 sm:flex-none';
+                      } else if (tag.type === 'status') {
+                        activeClass = tag.value === 'Success'
+                          ? 'bg-emerald-500 text-white border-transparent shadow-[0_0_15px_rgba(16,185,129,0.5)] font-semibold'
+                          : 'bg-red-500 text-white border-transparent shadow-[0_0_15px_rgba(239,68,68,0.5)] font-semibold';
+                      }
+
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => toggleTag(tag.value)}
+                          className={`px-4 py-1.5 rounded-[20px] text-xs font-medium transition-all flex items-center justify-center border ${isActive
+                            ? activeClass
+                            : 'bg-transparent text-slate-300 border-white/10 hover:border-white/30'
+                            }`}
+                        >
+                          {tag.value}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
@@ -338,6 +394,42 @@ const Results = () => {
           </div>
         </div>
         <div className="h-20"></div>
+      </div>
+
+      {/* System Status Box */}
+      <div className={`fixed right-8 ${currentSong ? 'bottom-20' : 'bottom-6'} z-40 transition-all duration-300`}>
+        <div className="w-80 bg-gradient-to-br from-[#1a1325] to-[#120d1a] border border-purple-500/20 rounded-2xl p-5 shadow-[0_8px_32px_rgba(168,85,247,0.15)] backdrop-blur-xl">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-icons text-purple-400 text-sm">bolt</span>
+            <h3 className="text-sm font-bold text-white tracking-widest uppercase truncate">System Status</h3>
+          </div>
+
+          {(() => {
+            const successCount = tags.find(t => t.type === 'status' && t.value === 'Success')?.count || 0;
+            const failedCount = tags.find(t => t.type === 'status' && t.value === 'Failed')?.count || 0;
+            const totalCount = successCount + failedCount;
+            const successPercentage = totalCount > 0 ? (successCount / totalCount) * 100 : 0;
+
+            return (
+              <>
+                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden mb-3">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.8)]"
+                    style={{ width: `${successPercentage}%` }}
+                  ></div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
+                  <span>Songs: {totalCount}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-green-400">{successCount} OK</span>
+                    <span className="text-red-400">{failedCount} ERR</span>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </div>
       </div>
 
       {/* CyberBase Fixed Player */}
