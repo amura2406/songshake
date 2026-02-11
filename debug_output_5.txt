@@ -1,4 +1,0 @@
-  File "/Users/anggar/Code/song-shake/debug_deep.py", line 46
-    except Exception as e:
-    ^^^^^^
-SyntaxError: invalid syntax

@@ -54,6 +54,29 @@ const Dashboard = () => {
         </div>
 
         <div className="flex items-center gap-4">
+          {user && (
+            <div className="flex items-center gap-3 bg-neutral-800 py-2 px-4 rounded-full border border-neutral-700">
+              {user.thumbnail ? (
+                <img src={user.thumbnail} alt={user.name} className="w-8 h-8 rounded-full" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center">
+                  <User size={16} />
+                </div>
+              )}
+              <span className="text-sm font-medium text-white">{user.name}</span>
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className="text-neutral-400 hover:text-white transition-colors p-2"
+            title="Logout"
+          >
+            <LogOut size={20} />
+          </button>
+          <button
+            onClick={() => navigate('/results')}
+            className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors border border-neutral-700"
+          >
             <ListMusic size={18} />
             <span>View Library</span>
           </button>
