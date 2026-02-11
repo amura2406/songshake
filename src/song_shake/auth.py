@@ -60,6 +60,7 @@ def get_data_api_playlists(yt: YTMusic, limit: int = 50):
     res.raise_for_status()
     data = res.json()
     
+    playlists = []
     for item in data.get('items', []):
         snippet = item['snippet']
         thumbs = snippet.get('thumbnails', {})
