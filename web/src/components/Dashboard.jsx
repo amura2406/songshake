@@ -31,7 +31,7 @@ const Dashboard = () => {
 
   const handleLogout = async () => {
     await logoutUser();
-    navigate('/');
+    window.location.href = '/';
   };
 
   const handleStartEnrichment = async (playlistId) => {

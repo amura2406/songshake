@@ -60,14 +60,27 @@ def get_data_api_playlists(yt: YTMusic, limit: int = 50):
     res.raise_for_status()
     data = res.json()
     
-    playlists = []
     for item in data.get('items', []):
+        snippet = item['snippet']
+        thumbs = snippet.get('thumbnails', {})
+        # ytmusicapi usually returns a list sorted by quality.
+        # Data API keys: default, medium, high, standard, maxres
+        thumb_list = []
+        for key in ['default', 'medium', 'high', 'standard', 'maxres']:
+            if key in thumbs:
+                t = thumbs[key]
+                thumb_list.append({
+                    'url': t.get('url'),
+                    'width': t.get('width'),
+                    'height': t.get('height')
+                })
+        
         playlists.append({
             'playlistId': item['id'],
-            'title': item['snippet']['title'],
-            'thumbnails': [{'url': item['snippet']['thumbnails'].get('default', {}).get('url', '')}],
+            'title': snippet['title'],
+            'thumbnails': thumb_list,
             'count': item['contentDetails']['itemCount'],
-            'description': item['snippet']['description']
+            'description': snippet['description']
         })
     return playlists
 
