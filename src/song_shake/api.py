@@ -88,6 +88,7 @@ def get_current_user():
     if not os.path.exists("oauth.json"):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
+    try:
         # Try to get user info via Google API
         with open("oauth.json") as f:
             tokens = json.load(f)
