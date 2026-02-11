@@ -579,12 +579,12 @@ def get_songs(owner: str = "web_user", skip: int = 0, limit: int = 50, tags: Opt
         filtered_tracks = []
         for track in all_tracks:
             track_tags = set(track.get('genres', []) + track.get('moods', []))
-            if 'Success' in filter_tags and getattr(track, 'success', track.get('status') == 'success'):
+            if getattr(track, 'success', track.get('status') == 'success'):
                 track_tags.add('Success')
-            if 'Failed' in filter_tags and not getattr(track, 'success', track.get('status') == 'success'):
+            else:
                 track_tags.add('Failed')
-                
-            if filter_tags.intersection(track_tags):
+
+            if filter_tags.issubset(track_tags):
                 filtered_tracks.append(track)
         all_tracks = filtered_tracks
         
