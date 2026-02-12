@@ -410,6 +410,15 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
             if not video_id:
                 continue
 
+            # Deduplication: Check if track exists globally
+            existing_track = storage.get_track_by_id(db, video_id)
+            if existing_track:
+                enrichment_tasks[task_id]["message"] = f"Skipping {title}: Found directly in local dataset"
+                print(f"DEBUG: Skipping {video_id} - already exists in songs.db")
+                existing_track['owner'] = owner
+                storage.save_track(db, existing_track)
+                continue
+
             try:
                 filename = enrichment.download_track(video_id)
                 metadata = enrichment.enrich_track(client, filename, title, artists, tracker)

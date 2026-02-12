@@ -139,7 +139,8 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
         console.print(f"[bold red]Error enriching:[/bold red] {e}")
         return {"genres": ["Error"], "moods": ["Error"], "error": str(e)}
 
-# Initial cleanup
+def process_playlist(playlist_id: str, owner: str = "local", wipe: bool = False):
+    # Initial cleanup
     if os.path.exists(TEMP_DIR):
         shutil.rmtree(TEMP_DIR, ignore_errors=True)
 

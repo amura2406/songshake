@@ -7,18 +7,26 @@ def init_db(path: str = STORAGE_FILE) -> TinyDB:
     return TinyDB(path)
 
 def save_track(db: TinyDB, track_data: dict):
-    """Save or update track in database by videoId."""
+    """Save or update track in global catalog and link to user."""
+    songs_table = db.table('songs')
+    user_songs_table = db.table('user_songs')
     Song = Query()
-    video_id = track_data.get('videoId')
-    owner = track_data.get('owner', 'local')  # Default to 'local' for CLI
+    UserSong = Query()
     
-    # Ensure owner is set in track_data
-    track_data['owner'] = owner
+    video_id = track_data.get('videoId')
+    owner = track_data.get('owner', 'local')
+    
+    # Remove owner from global track_data if present to keep catalog generic
+    track_data.pop('owner', None)
     
     if video_id:
-        db.upsert(track_data, (Song.videoId == video_id) & (Song.owner == owner))
+        songs_table.upsert(track_data, Song.videoId == video_id)
+        # Link user to this videoId if not already linked
+        if not user_songs_table.search((UserSong.owner == owner) & (UserSong.videoId == video_id)):
+            user_songs_table.insert({'owner': owner, 'videoId': video_id})
     else:
-        db.insert(track_data)
+        # Fallback if no videoId (should rarely happen)
+        songs_table.insert(track_data)
 
 def save_enrichment_history(playlist_id: str, owner: str, metadata: dict, db: TinyDB = None):
     """Save enrichment history for a playlist."""
@@ -63,15 +71,43 @@ def get_all_tracks(db: TinyDB = None, owner: str = 'local') -> list:
     """Get all tracks from database for a specific owner."""
     if db is None:
         db = init_db()
+    
+    songs_table = db.table('songs')
+    user_songs_table = db.table('user_songs')
+    UserSong = Query()
+    
+    # Get all videoIds linked to this owner
+    user_links = user_songs_table.search(UserSong.owner == owner)
+    video_ids = [link.get('videoId') for link in user_links if link.get('videoId')]
+    
+    if not video_ids:
+        return []
+    
+    # Build a small list of matching global songs
+    # TinyDB doesn't have an 'in' operator natively but we can use any() or check manually
+    # The safest way is to just fetch the whole songs table (or matching) if small, 
+    # but test_filter works by doing a manual loop
+    
+    all_songs = songs_table.all()
+    user_songs = [s for s in all_songs if s.get('videoId') in video_ids]
+    
+    return user_songs
+
+def get_track_by_id(db: TinyDB, video_id: str) -> dict:
+    """Check if track exists in the global catalog by videoId."""
+    if db is None:
+        db = init_db()
+    songs_table = db.table('songs')
     Song = Query()
-    return db.search(Song.owner == owner)
+    result = songs_table.search(Song.videoId == video_id)
+    return result[0] if result else None
 
 def get_tags(db: TinyDB = None, owner: str = 'local') -> dict:
     """Get all unique moods and genres from the database, sorted by count."""
     if db is None:
         db = init_db()
-    Song = Query()
-    tracks = db.search(Song.owner == owner)
+    
+    tracks = get_all_tracks(db, owner)
 
     tags = {}
     success_count = 0
