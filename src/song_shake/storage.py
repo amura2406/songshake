@@ -127,6 +127,9 @@ def get_tags(db: TinyDB = None, owner: str = 'local') -> dict:
         for mood in track.get('moods', []):
             tags[mood] = tags.get(mood, {'type': 'mood', 'count': 0})
             tags[mood]['count'] += 1
+        for inst in track.get('instruments', []):
+            tags[inst] = tags.get(inst, {'type': 'instrument', 'count': 0})
+            tags[inst]['count'] += 1
 
     # Convert to sorted list
     result = []

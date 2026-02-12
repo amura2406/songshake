@@ -106,6 +106,8 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
         Provide a JSON object with:
         - genres: list of strings (e.g. "Pop", "Rock", "Indie")
         - moods: list of strings (e.g. "Happy", "Sad", "Energetic")
+        - bpm: integer representing the BPM count
+        - instruments: list of strings representing the main instruments played (e.g. "Bass", "Guitar", "Piano")
         
         Only return the JSON.
         """
@@ -133,11 +135,11 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
              data = json.loads(response.text)
              return data
         except:
-             return {"genres": [], "moods": [], "error": "JSON parse error"}
+             return {"genres": [], "moods": [], "instruments": [], "bpm": None, "error": "JSON parse error"}
              
     except Exception as e:
         console.print(f"[bold red]Error enriching:[/bold red] {e}")
-        return {"genres": ["Error"], "moods": ["Error"], "error": str(e)}
+        return {"genres": ["Error"], "moods": ["Error"], "instruments": [], "bpm": None, "error": str(e)}
 
 def process_playlist(playlist_id: str, owner: str = "local", wipe: bool = False):
     # Initial cleanup

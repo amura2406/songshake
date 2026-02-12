@@ -30,17 +30,32 @@ const Results = () => {
     return ts ? ts.split(',') : [];
   }, [location.search]);
 
+  const queryBpm = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return {
+      min: params.get('min_bpm') ? parseInt(params.get('min_bpm')) : null,
+      max: params.get('max_bpm') ? parseInt(params.get('max_bpm')) : null
+    };
+  }, [location.search]);
+
+  const [bpmRange, setBpmRange] = useState([20, 200]);
+
   // Sync initial state from URL on mount/url change
   useEffect(() => {
     setSelectedTags(queryTags);
+    if (queryBpm.min || queryBpm.max) {
+      setBpmRange([queryBpm.min || 20, queryBpm.max || 200]);
+    } else {
+      setBpmRange([20, 200]);
+    }
     setPage(0); // Reset page on filter change
-  }, [queryTags]);
+  }, [queryTags, queryBpm.min, queryBpm.max]);
 
 
   useEffect(() => {
     loadData();
     loadTags();
-  }, [page, queryTags]); // Reload when page or tags query change
+  }, [page, queryTags, queryBpm.min, queryBpm.max]); // Reload when page or tags query change
 
   useEffect(() => {
     let interval;
@@ -85,7 +100,7 @@ const Results = () => {
 
       const ownerId = u ? u.id : 'web_user';
       const tagsString = queryTags.length > 0 ? queryTags.join(',') : null;
-      const data = await getSongs(ownerId, page * limit, limit, tagsString);
+      const data = await getSongs(ownerId, page * limit, limit, tagsString, queryBpm.min, queryBpm.max);
       // Filter out songs without valid data
       const validSongs = data.filter(s => s.videoId);
       setSongs(validSongs);
@@ -110,6 +125,18 @@ const Results = () => {
       params.set('tags', newTags.join(','));
     } else {
       params.delete('tags');
+    }
+    navigate(`/results?${params.toString()}`);
+  };
+
+  const applyBpmFilter = (min, max) => {
+    const params = new URLSearchParams(location.search);
+    if (min !== null && max !== null) {
+      params.set('min_bpm', min);
+      params.set('max_bpm', max);
+    } else {
+      params.delete('min_bpm');
+      params.delete('max_bpm');
     }
     navigate(`/results?${params.toString()}`);
   };
@@ -180,46 +207,55 @@ const Results = () => {
         {/* Minimal Toolbar Filters */}
         {tags.length > 0 && (
           <div className="mb-6">
+            {/* Selected Filters (Persistent) */}
+            {(selectedTags.length > 0 || queryBpm.min || queryBpm.max) && (
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                {selectedTags.map(tag => (
+                  <button key={tag} onClick={() => toggleTag(tag)} className="flex items-center gap-1 px-3 py-1 rounded-full border border-white/20 text-xs font-medium text-white hover:bg-white/10 transition-colors">
+                    {tag} <span className="material-icons text-[14px]">close</span>
+                  </button>
+                ))}
+                {(queryBpm.min || queryBpm.max) && (
+                  <button onClick={() => applyBpmFilter(null, null)} className="flex items-center gap-1 px-3 py-1 rounded-full border border-white/20 text-xs font-medium text-white hover:bg-white/10 transition-colors">
+                    BPM: {queryBpm.min || 20} - {queryBpm.max || 200} <span className="material-icons text-[14px]">close</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    const params = new URLSearchParams(location.search);
+                    params.delete('tags');
+                    params.delete('min_bpm');
+                    params.delete('max_bpm');
+                    navigate(`/results?${params.toString()}`);
+                  }}
+                  className="text-xs font-medium text-white underline underline-offset-4 hover:text-primary transition-colors ml-2"
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            )}
+
             {/* Toolbar */}
             <div className="flex items-center justify-between border-b border-white/5 pb-4">
               <div className="flex flex-wrap items-center gap-6">
-                {['genre', 'mood', 'status'].map(type => {
-                  const availableTags = tags.filter(t => t.type === type);
+                {['genre', 'mood', 'instrument', 'bpm', 'status'].map(type => {
+                  let availableTags = tags.filter(t => t.type === type);
+                  if (type === 'bpm') availableTags = [{ value: 'bpm' }];
                   if (availableTags.length === 0) return null;
 
-                  const hasActive = selectedTags.some(t => availableTags.find(tag => tag.value === t));
                   const isActiveDropdown = activeDropdown === type;
 
                   return (
                     <button
                       key={type}
                       onClick={() => setActiveDropdown(isActiveDropdown ? null : type)}
-                      className={`flex items-center gap-1 text-sm font-semibold transition-colors relative ${isActiveDropdown || hasActive ? 'text-white' : 'text-slate-400 hover:text-white capitalize'}`}
+                      className={`flex items-center gap-1 text-sm font-semibold transition-colors relative ${isActiveDropdown ? 'text-white' : 'text-slate-400 hover:text-white capitalize'}`}
                     >
                       <span className="capitalize">{type}</span>
                       <span className="material-icons text-[16px] leading-none mb-0.5">{isActiveDropdown ? 'expand_less' : 'expand_more'}</span>
-                      {hasActive && (
-                        <span className="absolute -top-1 -right-2 w-1.5 h-1.5 rounded-full bg-white"></span>
-                      )}
                     </button>
                   );
                 })}
-              </div>
-
-              {/* Right Controls */}
-              <div className="flex items-center gap-4">
-                {selectedTags.length > 0 && (
-                  <button
-                    onClick={() => {
-                      const params = new URLSearchParams(location.search);
-                      params.delete('tags');
-                      navigate(`/results?${params.toString()}`);
-                    }}
-                    className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white transition-all bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg"
-                  >
-                    <span className="material-icons text-sm">clear_all</span> Clear Filters
-                  </button>
-                )}
               </div>
             </div>
 
@@ -238,33 +274,74 @@ const Results = () => {
                   </button>
 
                   <div className="flex flex-wrap gap-2.5 pr-14 pt-2">
-                    {tags.filter(t => t.type === activeDropdown).map((tag, i) => {
-                      const isActive = selectedTags.includes(tag.value);
+                    {activeDropdown === 'bpm' ? (
+                      <div className="w-full max-w-md py-4">
+                        <div className="flex items-center justify-between text-xs text-slate-400 font-medium mb-4">
+                          <span>BPM Range</span>
+                          <span className="text-white bg-white/10 px-2 py-1 rounded">{bpmRange[0]} - {bpmRange[1]}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="20"
+                          max="200"
+                          value={bpmRange[1]}
+                          onChange={(e) => setBpmRange([20, parseInt(e.target.value)])}
+                          onMouseUp={() => applyBpmFilter(bpmRange[0], bpmRange[1])}
+                          onTouchEnd={() => applyBpmFilter(bpmRange[0], bpmRange[1])}
+                          className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer mb-6"
+                        />
+                        <div className="flex gap-2">
+                          {[
+                            { label: 'Slow', max: 70 },
+                            { label: 'Slow-Med', max: 90 },
+                            { label: 'Medium', max: 110 },
+                            { label: 'Med-Fast', max: 130 },
+                            { label: 'Fast', max: 200 }
+                          ].map(preset => (
+                            <button
+                              key={preset.label}
+                              onClick={() => {
+                                setBpmRange([20, preset.max]);
+                                applyBpmFilter(20, preset.max);
+                              }}
+                              className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      tags.filter(t => t.type === activeDropdown).map((tag, i) => {
+                        const isActive = selectedTags.includes(tag.value);
 
-                      let activeClass = 'bg-white text-black border-white hover:bg-neutral-200';
-                      if (tag.type === 'genre') {
-                        activeClass = 'bg-gradient-to-r from-indigo-500 via-purple-500 to-fuchsia-500 text-white border-transparent shadow-[0_0_15px_rgba(168,85,247,0.6)] font-semibold flex-1 sm:flex-none';
-                      } else if (tag.type === 'mood') {
-                        activeClass = 'bg-gradient-to-r from-red-500 via-rose-500 to-pink-500 text-white border-transparent shadow-[0_0_15px_rgba(244,63,94,0.6)] font-semibold flex-1 sm:flex-none';
-                      } else if (tag.type === 'status') {
-                        activeClass = tag.value === 'Success'
-                          ? 'bg-emerald-500 text-white border-transparent shadow-[0_0_15px_rgba(16,185,129,0.5)] font-semibold'
-                          : 'bg-red-500 text-white border-transparent shadow-[0_0_15px_rgba(239,68,68,0.5)] font-semibold';
-                      }
+                        let activeClass = 'bg-white text-black border-white hover:bg-neutral-200';
+                        if (tag.type === 'genre') {
+                          activeClass = 'bg-gradient-to-r from-indigo-500 via-purple-500 to-fuchsia-500 text-white border-transparent shadow-[0_0_15px_rgba(168,85,247,0.6)] font-semibold flex-1 sm:flex-none';
+                        } else if (tag.type === 'mood') {
+                          activeClass = 'bg-gradient-to-r from-red-500 via-rose-500 to-pink-500 text-white border-transparent shadow-[0_0_15px_rgba(244,63,94,0.6)] font-semibold flex-1 sm:flex-none';
+                        } else if (tag.type === 'instrument') {
+                          activeClass = 'bg-gradient-to-r from-teal-500 via-cyan-500 to-blue-500 text-white border-transparent shadow-[0_0_15px_rgba(20,184,166,0.6)] font-semibold flex-1 sm:flex-none';
+                        } else if (tag.type === 'status') {
+                          activeClass = tag.value === 'Success'
+                            ? 'bg-emerald-500 text-white border-transparent shadow-[0_0_15px_rgba(16,185,129,0.5)] font-semibold'
+                            : 'bg-red-500 text-white border-transparent shadow-[0_0_15px_rgba(239,68,68,0.5)] font-semibold';
+                        }
 
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => toggleTag(tag.value)}
-                          className={`px-4 py-1.5 rounded-[20px] text-xs font-medium transition-all flex items-center justify-center border ${isActive
-                            ? activeClass
-                            : 'bg-transparent text-slate-300 border-white/10 hover:border-white/30'
-                            }`}
-                        >
-                          {tag.value}
-                        </button>
-                      );
-                    })}
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => toggleTag(tag.value)}
+                            className={`px-4 py-1.5 rounded-[20px] text-xs font-medium transition-all flex items-center justify-center border ${isActive
+                              ? activeClass
+                              : 'bg-transparent text-slate-300 border-white/10 hover:border-white/30'
+                              }`}
+                          >
+                            {tag.value}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -291,6 +368,8 @@ const Results = () => {
                       <th className="px-4 py-3 font-semibold">Artist</th>
                       <th className="px-4 py-3 font-semibold">Genre</th>
                       <th className="px-4 py-3 font-semibold">Mood</th>
+                      <th className="px-4 py-3 font-semibold">Instrument</th>
+                      <th className="px-4 py-3 font-semibold text-center">BPM</th>
                       <th className="px-4 py-3 font-semibold w-10"></th>
                     </tr>
                   </thead>
@@ -353,6 +432,16 @@ const Results = () => {
                               <span className="text-slate-600 text-[10px] italic">Unknown</span>
                             )}
                           </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex gap-2 flex-wrap">
+                            {song.instruments?.map((inst, i) => (
+                              <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap">{inst}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center text-slate-300 text-xs font-medium">
+                          {song.bpm || '-'}
                         </td>
                         <td className="px-4 py-4 text-right">
                           {song.url && (

@@ -15,12 +15,14 @@ This tool takes your YouTube Music playlists and enriches them with **Genres** a
 -   **AI Enrichment**: Uses **Gemini 3 Flash Preview** to listen to audio and extract:
     -   Genres (e.g., Pop, Indie, Rock)
     -   Moods (e.g., Energetic, Melancholic, Chill)
+    -   Instruments (e.g., Guitar, Piano, Drums)
+    -   BPM (Beats Per Minute)
 -   **Persistent Storage**: Saves enriched data to a local `songs.db` (TinyDB) with a dual-table deduplication architecture:
     -   `songs`: A global catalog storing processed tracks to avoid redundant LLM analysis across users.
     -   `user_songs`: A relational table linking individual users to specific tracks in the global catalog.
 -   **Resilient Processing**: Tracks that fail to enrich are still saved and visually flagged, ensuring complete playlist visibility.
 -   **Cost Tracking**: Tracks Gemini API token usage and estimated cost in real-time during enrichment.
--   **Smart Filtering**: Filter by specific Genres, Moods, or Enrichment Status directly on the Results page.
+-   **Smart Filtering**: Filter by specific Genres, Moods, Instruments, or Enrichment Status directly on the Results page. Filter by BPM range as well.
 
 ## Workflow
 

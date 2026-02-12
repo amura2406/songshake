@@ -66,6 +66,8 @@ class Song(BaseModel):
     thumbnails: List[Dict[str, Any]] = []
     genres: List[str] = []
     moods: List[str] = []
+    instruments: List[str] = []
+    bpm: Optional[int] = None
     status: str
     error_message: Optional[str] = None
     url: Optional[str] = None
@@ -435,6 +437,8 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
                     "thumbnails": track.get('thumbnails', []),
                     "genres": metadata.get('genres', []),
                     "moods": metadata.get('moods', []),
+                    "instruments": metadata.get('instruments', []),
+                    "bpm": metadata.get('bpm'),
                     "status": "error" if is_error else "success",
                     "success": not is_error,
                     "error_message": metadata.get('error'),
@@ -460,6 +464,8 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
                     "thumbnails": track.get('thumbnails', []),
                     "genres": [],
                     "moods": [],
+                    "instruments": [],
+                    "bpm": None,
                     "status": "error",
                     "success": False,
                     "error_message": str(e),
@@ -579,23 +585,32 @@ async def stream_enrichment_status(task_id: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/songs", response_model=List[Song])
-def get_songs(owner: str = "web_user", skip: int = 0, limit: int = 50, tags: Optional[str] = None):
-    print(f"DEBUG: get_songs requested for owner='{owner}' skip={skip} limit={limit} tags='{tags}'")
+def get_songs(owner: str = "web_user", skip: int = 0, limit: int = 50, tags: Optional[str] = None, min_bpm: Optional[int] = None, max_bpm: Optional[int] = None):
+    print(f"DEBUG: get_songs requested for owner='{owner}' skip={skip} limit={limit} tags='{tags}' min_bpm={min_bpm} max_bpm={max_bpm}")
     all_tracks = storage.get_all_tracks(owner=owner)
     
-    if tags:
-        filter_tags = set([t.strip() for t in tags.split(',') if t.strip()])
-        filtered_tracks = []
-        for track in all_tracks:
-            track_tags = set(track.get('genres', []) + track.get('moods', []))
+    filtered_tracks = []
+    for track in all_tracks:
+        bpm = track.get('bpm')
+        if min_bpm is not None and (bpm is None or bpm < min_bpm):
+            continue
+        if max_bpm is not None and (bpm is None or bpm > max_bpm):
+            continue
+
+        if tags:
+            filter_tags = set([t.strip() for t in tags.split(',') if t.strip()])
+            track_tags = set(track.get('genres', []) + track.get('moods', []) + track.get('instruments', []))
             if getattr(track, 'success', track.get('status') == 'success'):
                 track_tags.add('Success')
             else:
                 track_tags.add('Failed')
 
-            if filter_tags.issubset(track_tags):
-                filtered_tracks.append(track)
-        all_tracks = filtered_tracks
+            if not filter_tags.issubset(track_tags):
+                continue
+                
+        filtered_tracks.append(track)
+        
+    all_tracks = filtered_tracks
         
     print(f"DEBUG: returning {len(all_tracks)} tracks after filtering")
     return all_tracks[skip : skip + limit]

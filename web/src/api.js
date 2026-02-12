@@ -99,8 +99,12 @@ export const getTags = async (owner) => {
   return res.data;
 };
 
-export const getSongs = async (owner, skip = 0, limit = 50, tags = null) => {
-  const res = await api.get('/api/songs', { params: { owner, skip, limit, tags } });
+export const getSongs = async (owner, skip = 0, limit = 50, tags = null, minBpm = null, maxBpm = null) => {
+  const params = { owner, skip, limit };
+  if (tags) params.tags = tags;
+  if (minBpm !== null) params.min_bpm = minBpm;
+  if (maxBpm !== null) params.max_bpm = maxBpm;
+  const res = await api.get('/api/songs', { params });
   return res.data;
 };
 
