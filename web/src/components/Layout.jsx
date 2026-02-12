@@ -11,23 +11,36 @@ const Layout = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
+    let intervalId;
+
     const loadData = async () => {
       try {
         const u = await getCurrentUser();
         setUser(u);
 
         if (u) {
-          const fetchedTags = await getTags(u.id);
-          const genres = fetchedTags.filter(t => t.type === 'genre');
-          const moods = fetchedTags.filter(t => t.type === 'mood');
-          const status = fetchedTags.filter(t => t.type === 'status');
-          setTags({ genres, moods, status });
+          const fetchTags = async () => {
+            const fetchedTags = await getTags(u.id);
+            const genres = fetchedTags.filter(t => t.type === 'genre');
+            const moods = fetchedTags.filter(t => t.type === 'mood');
+            const status = fetchedTags.filter(t => t.type === 'status');
+            setTags({ genres, moods, status });
+          };
+
+          await fetchTags();
+
+          // Poll tags every 5 seconds to update the stats box dynamically
+          clearInterval(intervalId);
+          intervalId = setInterval(fetchTags, 5000);
         }
       } catch (error) {
         console.error("Failed to load user or tags", error);
       }
     };
+
     loadData();
+
+    return () => clearInterval(intervalId);
   }, [location.pathname]); // Reload tags if we navigate around
 
   const handleLogout = async () => {
