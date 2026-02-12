@@ -104,8 +104,8 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
         Artist: {artist}
         
         Provide a JSON object with:
-        - genres: list of strings (e.g. "Pop", "Rock", "Indie")
-        - moods: list of strings (e.g. "Happy", "Sad", "Energetic")
+        - genres: list of strings (e.g. "Pop", "Rock", "Indie"). IMPORTANT: Use consistent and standard capitalization. For hyphenated genres, capitalize only the first word (e.g., "Synth-pop", not "Synth-Pop" or "Synthpop").
+        - moods: list of strings (e.g. "Happy", "Sad", "Energetic"). Capitalize the first letter.
         - bpm: integer representing the BPM count
         - instruments: list of strings representing the main instruments played (e.g. "Bass", "Guitar", "Piano")
         
@@ -132,7 +132,25 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
         
         try:
              import json
+             import re
              data = json.loads(response.text)
+             
+             # Post-process genres to ensure consistency
+             if 'genres' in data and isinstance(data['genres'], list):
+                 normalized_genres = []
+                 for g in data['genres']:
+                     # Force "Synthpop" -> "Synth-pop"
+                     if g.lower() == 'synthpop':
+                         g = 'Synth-pop'
+                     # Capitalize first letter only for hyphenated names (e.g. Synth-Pop -> Synth-pop)
+                     elif '-' in g:
+                         parts = g.split('-')
+                         g = '-'.join([parts[0].capitalize()] + [p.lower() for p in parts[1:]])
+                     else:
+                         g = g.capitalize()
+                     normalized_genres.append(g)
+                 data['genres'] = list(set(normalized_genres)) # deduplicate
+                 
              return data
         except:
              return {"genres": [], "moods": [], "instruments": [], "bpm": None, "error": "JSON parse error"}

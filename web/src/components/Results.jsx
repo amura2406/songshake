@@ -485,41 +485,7 @@ const Results = () => {
         <div className="h-20"></div>
       </div>
 
-      {/* System Status Box */}
-      <div className={`fixed right-8 ${currentSong ? 'bottom-20' : 'bottom-6'} z-40 transition-all duration-300`}>
-        <div className="w-80 bg-gradient-to-br from-[#1a1325] to-[#120d1a] border border-purple-500/20 rounded-2xl p-5 shadow-[0_8px_32px_rgba(168,85,247,0.15)] backdrop-blur-xl">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="material-icons text-purple-400 text-sm">bolt</span>
-            <h3 className="text-sm font-bold text-white tracking-widest uppercase truncate">System Status</h3>
-          </div>
 
-          {(() => {
-            const successCount = tags.find(t => t.type === 'status' && t.value === 'Success')?.count || 0;
-            const failedCount = tags.find(t => t.type === 'status' && t.value === 'Failed')?.count || 0;
-            const totalCount = successCount + failedCount;
-            const successPercentage = totalCount > 0 ? (successCount / totalCount) * 100 : 0;
-
-            return (
-              <>
-                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden mb-3">
-                  <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.8)]"
-                    style={{ width: `${successPercentage}%` }}
-                  ></div>
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-                  <span>Songs: {totalCount}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-green-400">{successCount} OK</span>
-                    <span className="text-red-400">{failedCount} ERR</span>
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      </div>
 
       {/* CyberBase Fixed Player */}
       {currentSong && (

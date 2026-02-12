@@ -4,7 +4,7 @@ import { getCurrentUser, logoutUser, getTags } from '../api';
 
 const Layout = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [tags, setTags] = useState({ genres: [], moods: [] });
+  const [tags, setTags] = useState({ genres: [], moods: [], status: [] });
   const [showAllGenres, setShowAllGenres] = useState(false);
   const [showAllMoods, setShowAllMoods] = useState(false);
   const navigate = useNavigate();
@@ -20,7 +20,8 @@ const Layout = ({ children }) => {
           const fetchedTags = await getTags(u.id);
           const genres = fetchedTags.filter(t => t.type === 'genre');
           const moods = fetchedTags.filter(t => t.type === 'mood');
-          setTags({ genres, moods });
+          const status = fetchedTags.filter(t => t.type === 'status');
+          setTags({ genres, moods, status });
         }
       } catch (error) {
         console.error("Failed to load user or tags", error);
@@ -93,89 +94,118 @@ const Layout = ({ children }) => {
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* Sidebar */}
-        <aside className="w-64 bg-surface-darker/30 border-r border-white/5 flex flex-col pt-6 pb-24 overflow-y-auto hidden md:flex backdrop-blur-sm shrink-0">
-          <div className="px-6 mb-8">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Management</h3>
-            <nav className="space-y-1">
-              {menuItems.map((item) => {
-                const isActive = location.pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                      isActive 
-                        ? 'bg-primary/20 text-primary border border-primary/30 shadow-neon' 
+        <aside className="w-64 bg-surface-darker/30 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-sm shrink-0">
+          <div className="flex-1 overflow-y-auto pt-6 pb-6 flex flex-col">
+            <div className="px-6 mb-8">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Management</h3>
+              <nav className="space-y-1">
+                {menuItems.map((item) => {
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${isActive
+                        ? 'bg-primary/20 text-primary border border-primary/30 shadow-neon'
                         : 'text-slate-400 hover:text-white hover:bg-white/5'
-                    }`}
+                        }`}
+                    >
+                      <span className="material-icons text-lg">{item.icon}</span>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+
+            <div className="px-6 mb-8">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Moods</h3>
+              <nav className="space-y-1">
+                {(showAllMoods ? tags.moods : tags.moods.slice(0, 7)).map((mood, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => handleTagClick(mood.name)}
+                    className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                   >
-                    <span className="material-icons text-lg">{item.icon}</span>
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
+                    <span className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(236,72,153,0.8)] ${idx % 4 === 0 ? 'bg-pink-500' : idx % 4 === 1 ? 'bg-purple-500' : idx % 4 === 2 ? 'bg-blue-500' : 'bg-green-500'}`}></span>
+                      {mood.name}
+                    </span>
+                    <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{mood.count}</span>
+                  </div>
+                ))}
+                {tags.moods.length > 7 && (
+                  <button
+                    onClick={() => setShowAllMoods(!showAllMoods)}
+                    className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
+                  >
+                    {showAllMoods ? 'Show less' : `Show all (${tags.moods.length})`}
+                  </button>
+                )}
+                {tags.moods.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-slate-600 italic">No moods found</div>
+                )}
+              </nav>
+            </div>
+
+            <div className="px-6 mb-8">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Genres</h3>
+              <nav className="space-y-1">
+                {(showAllGenres ? tags.genres : tags.genres.slice(0, 7)).map((genre, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => handleTagClick(genre.name)}
+                    className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className="material-icons text-xs opacity-70">album</span>
+                      {genre.name}
+                    </span>
+                    <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{genre.count}</span>
+                  </div>
+                ))}
+                {tags.genres.length > 7 && (
+                  <button
+                    onClick={() => setShowAllGenres(!showAllGenres)}
+                    className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
+                  >
+                    {showAllGenres ? 'Show less' : `Show all (${tags.genres.length})`}
+                  </button>
+                )}
+                {tags.genres.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-slate-600 italic">No genres found</div>
+                )}
+              </nav>
+            </div>
           </div>
 
-          <div className="px-6 mb-8">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Moods</h3>
-            <nav className="space-y-1">
-              {(showAllMoods ? tags.moods : tags.moods.slice(0, 7)).map((mood, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => handleTagClick(mood.name)}
-                  className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  <span className="flex items-center gap-3">
-                    <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(236,72,153,0.8)] ${idx % 4 === 0 ? 'bg-pink-500' : idx % 4 === 1 ? 'bg-purple-500' : idx % 4 === 2 ? 'bg-blue-500' : 'bg-green-500'}`}></span>
-                    {mood.name}
-                  </span>
-                  <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{mood.count}</span>
-                </div>
-              ))}
-              {tags.moods.length > 7 && (
-                <button
-                  onClick={() => setShowAllMoods(!showAllMoods)}
-                  className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
-                >
-                  {showAllMoods ? 'Show less' : `Show all (${tags.moods.length})`}
-                </button>
-              )}
-              {tags.moods.length === 0 && (
-                <div className="px-3 py-2 text-sm text-slate-600 italic">No moods found</div>
-              )}
-            </nav>
-          </div>
+          {(() => {
+            const successCount = tags.status.find(t => t.name === 'Success')?.count || 0;
+            const failedCount = tags.status.find(t => t.name === 'Failed')?.count || 0;
+            const totalCount = successCount + failedCount;
+            const successPercentage = totalCount > 0 ? (successCount / totalCount) * 100 : 0;
 
-          <div className="px-6 mb-8">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Genres</h3>
-            <nav className="space-y-1">
-              {(showAllGenres ? tags.genres : tags.genres.slice(0, 7)).map((genre, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => handleTagClick(genre.name)}
-                  className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  <span className="flex items-center gap-3">
-                    <span className="material-icons text-xs opacity-70">album</span>
-                    {genre.name}
-                  </span>
-                  <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{genre.count}</span>
+            if (totalCount === 0) return null;
+
+            return (
+              <div className="p-6 border-t border-white/5 bg-surface-darker/50 shrink-0">
+                <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-2">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.8)]"
+                    style={{ width: `${successPercentage}%` }}
+                  ></div>
                 </div>
-              ))}
-              {tags.genres.length > 7 && (
-                <button
-                  onClick={() => setShowAllGenres(!showAllGenres)}
-                  className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
-                >
-                  {showAllGenres ? 'Show less' : `Show all (${tags.genres.length})`}
-                </button>
-              )}
-              {tags.genres.length === 0 && (
-                <div className="px-3 py-2 text-sm text-slate-600 italic">No genres found</div>
-              )}
-            </nav>
-          </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                  <span>Songs: {totalCount}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-400">{successCount} OK</span>
+                    <span className="text-red-400">{failedCount} ERR</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </aside>
 
         {/* Main Content Area */}
