@@ -1,4 +1,4 @@
-# Song Shake (v0.5.0)
+# Song Shake (v0.5.1)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
 
@@ -7,6 +7,7 @@ This tool takes your YouTube Music playlists and enriches them with **Genres** a
 ## Features
 
 -   **Web Interface (New!)**: Modern UI for managing enrinchment (Login, Dashboard, Progress, Results).
+-   **Background Job Support**: Identify running enrichment tasks on the dashboard and resume viewing real-time progress without double-processing.
 -   **CLI Tool**: Classic command-line interface for quick operations.
 -   **Smart Enrichment**: Uses AI to analyze audio and determine genre/mood.
 -   **Local Database**: Stores results in `songs.db` (TinyDB).
