@@ -15,7 +15,9 @@ This tool takes your YouTube Music playlists and enriches them with **Genres** a
 -   **AI Enrichment**: Uses **Gemini 3 Flash Preview** to listen to audio and extract:
     -   Genres (e.g., Pop, Indie, Rock)
     -   Moods (e.g., Energetic, Melancholic, Chill)
--   **Persistent Storage**: Saves enriched data to a local `songs.db` (TinyDB).
+-   **Persistent Storage**: Saves enriched data to a local `songs.db` (TinyDB) with a dual-table deduplication architecture:
+    -   `songs`: A global catalog storing processed tracks to avoid redundant LLM analysis across users.
+    -   `user_songs`: A relational table linking individual users to specific tracks in the global catalog.
 -   **Resilient Processing**: Tracks that fail to enrich are still saved and visually flagged, ensuring complete playlist visibility.
 -   **Cost Tracking**: Tracks Gemini API token usage and estimated cost in real-time during enrichment.
 -   **Smart Filtering**: Filter by specific Genres, Moods, or Enrichment Status directly on the Results page.
@@ -25,11 +27,13 @@ This tool takes your YouTube Music playlists and enriches them with **Genres** a
 ```mermaid
 graph TD
     A[User] -->|Auth| B(YouTube Music)
-    A -->|Enrich Playlist| C[Song Shake CLI]
+    A -->|Enrich Playlist| C[Song Shake CLI / Web]
+    C -->|Check Local DB First| F[TinyDB songs.db]
     C -->|Fetch Tracks| B
-    C -->|Download Audio| D[yt-dlp]
+    C -->|Download Audio If New| D[yt-dlp]
     D -->|Audio File| E[Gemini 3 Flash]
-    E -->|Metadata JSON| F[TinyDB songs.db]
+    E -->|Metadata JSON| F
+    F -->|Link to User| U[user_songs Table]
 ```
 
 ## Prerequisites
@@ -191,7 +195,9 @@ A modern, responsive React application.
 - **Web**: Uses Web Application Flow (standard "Login with Google" redirect).
 - **Token Compatibility**: Both flows generate an `oauth.json` file. The backend is designed to handle both, but for the best Web UI experience, use the Web Login button.
 
-### 3. Rate Limiting
+### 4. Database Deduplication (New in v0.5)
+**Problem**: Processing the same song for multiple users wastes LLM tokens and time.
+**Solution**: Song Shake now utilizes a dual-table architecture in TinyDB. Before downloading or sending a track to Gemini, it queries the `songs` catalog. If the `videoId` already exists globally, it skips the LLM and instantly links the track to the user's `user_songs` record, resulting in a **0-token cost** hit!
 - **YouTube Data API**: Has a quota (default 10,000 units/day). Listing playlists is cheap (1 unit), but heavy usage might hit limits.
 - **Gemini**: The Flash model is fast and cheap, but ensure your `GOOGLE_API_KEY` has billing enabled for sustained high-volume usage.
 
