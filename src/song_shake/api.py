@@ -52,6 +52,8 @@ class PlaylistResponse(BaseModel):
     description: Optional[str] = None
     last_processed: Optional[str] = None
     last_status: Optional[str] = None
+    is_running: Optional[bool] = False
+    active_task_id: Optional[str] = None
 
 class EnrichmentRequest(BaseModel):
     playlist_id: str
@@ -356,12 +358,34 @@ def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
             }
             playlists.insert(0, liked_music)
         
-        # Merge with history
+        # Merge with history and active tasks
         try:
             history = storage.get_all_history()
             print(f"DEBUG: History keys: {list(history.keys())}")
+            
+            # Map of active playlists: playlist_id -> task_id
+            active_playlists = {}
+            for tid, tdata in enrichment_tasks.items():
+                if tdata.get("status") in ["pending", "running"]:
+                    # tid is formed like f"{playlist_id}_{random_hex}"
+                    # Let's extract playlist_id by splitting from the right by '_'
+                    components = tid.rsplit('_', 1)
+                    if len(components) == 2:
+                        pid = components[0]
+                        active_playlists[pid] = tid
+
             for p in playlists:
                 pid = p.get('playlistId')
+                
+                # Check active status
+                if pid in active_playlists:
+                    p['is_running'] = True
+                    p['active_task_id'] = active_playlists[pid]
+                else:
+                    p['is_running'] = False
+                    p['active_task_id'] = None
+
+                # Apply history
                 if pid in history:
                     p['last_processed'] = history[pid].get('last_processed')
                     p['last_status'] = history[pid].get('status')

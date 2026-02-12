@@ -32,17 +32,22 @@ const Dashboard = () => {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(() => {
+      loadData(false); // background poll
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (showLoading = true) => {
     try {
+      if (showLoading) setLoading(true);
       const [pl, u] = await Promise.all([getPlaylists(), getCurrentUser()]);
       setPlaylists(pl);
       setUser(u);
     } catch (error) {
       console.error("Failed to load data", error);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
@@ -51,11 +56,16 @@ const Dashboard = () => {
     window.location.href = '/';
   };
 
-  const handleStartEnrichment = async (playlistId) => {
+  const handleStartEnrichment = async (playlist) => {
     try {
+      if (playlist.is_running && playlist.active_task_id) {
+        navigate(`/enrichment/${playlist.active_task_id}`);
+        return;
+      }
+
       const ownerId = user ? user.id : 'web_user';
       console.log("Starting enrichment for owner:", ownerId);
-      const taskId = await startEnrichment(playlistId, ownerId);
+      const taskId = await startEnrichment(playlist.playlistId, ownerId);
       navigate(`/enrichment/${taskId}`);
     } catch (error) {
       console.error("Failed to start enrichment", error);
@@ -98,14 +108,28 @@ const Dashboard = () => {
                        <ListMusic className="w-12 h-12 text-neutral-600" />
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                  <div className={`absolute inset-0 bg-black/60 ${playlist.is_running ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity flex flex-col items-center justify-center backdrop-blur-sm gap-2`}>
                     <button
-                      onClick={() => handleStartEnrichment(playlist.playlistId)}
-                      className="bg-primary hover:bg-fuchsia-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 transform scale-90 group-hover:scale-100 transition-transform shadow-neon"
+                      onClick={() => handleStartEnrichment(playlist)}
+                      className={`${playlist.is_running ? 'bg-neutral-600 hover:bg-neutral-500 text-white' : 'bg-primary hover:bg-fuchsia-600 text-white shadow-neon'} px-6 py-3 rounded-full font-bold flex items-center gap-2 transform ${playlist.is_running ? 'scale-100' : 'scale-90 group-hover:scale-100'} transition-transform`}
                     >
-                      <Play size={20} fill="currentColor" />
-                      Idenfity Songs
+                      {playlist.is_running ? (
+                        <>
+                          <Activity size={20} className="animate-pulse" />
+                          View Progress
+                        </>
+                      ) : (
+                        <>
+                            <Play size={20} fill="currentColor" />
+                          Identify Songs
+                        </>
+                      )}
                     </button>
+                    {playlist.is_running && (
+                      <span className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full border border-emerald-400/20 animate-pulse">
+                        Currently processing
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="p-6">
