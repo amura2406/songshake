@@ -159,110 +159,210 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
         console.print(f"[bold red]Error enriching:[/bold red] {e}")
         return {"genres": ["Error"], "moods": ["Error"], "instruments": [], "bpm": None, "error": str(e)}
 
-def process_playlist(playlist_id: str, owner: str = "local", wipe: bool = False):
+def process_playlist(
+    playlist_id: str,
+    owner: str = "local",
+    wipe: bool = False,
+    api_key: str | None = None,
+    on_progress: callable = None,
+) -> list[dict]:
+    """Process a playlist: fetch tracks, deduplicate, download, enrich, and save.
+
+    This is the shared enrichment logic used by both the CLI and the Web API.
+
+    Args:
+        playlist_id: YouTube playlist ID to process.
+        owner: Owner identifier for user_songs linking.
+        wipe: If True, wipe the database before starting.
+        api_key: Google/Gemini API key. If None, reads from env or prompts (CLI only).
+        on_progress: Optional callback receiving a dict with keys:
+            current (int), total (int), message (str),
+            tokens (int), cost (float), track_data (dict | None).
+
+    Returns:
+        List of processed track_data dicts.
+    """
+    from song_shake import storage
+    from datetime import datetime
+
+    def _report(current: int, total: int, message: str,
+                tracker: TokenTracker, track_data: dict | None = None):
+        if on_progress is not None:
+            on_progress({
+                "current": current,
+                "total": total,
+                "message": message,
+                "tokens": tracker.input_tokens + tracker.output_tokens,
+                "cost": tracker.get_cost(),
+                "track_data": track_data,
+            })
+
     # Initial cleanup
     if os.path.exists(TEMP_DIR):
         shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
     try:
         if wipe:
-            from song_shake import storage
             storage.wipe_db()
             console.print("[yellow]Database wiped.[/yellow]")
 
         load_dotenv()
-        
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+        # Resolve API key
+        if not api_key:
+            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not api_key:
             from rich.prompt import Prompt
             api_key = Prompt.ask("Enter Google API Key", password=True)
             if not api_key:
                 console.print("[red]API Key required.[/red]")
-                return
+                return []
 
         try:
             client = genai.Client(api_key=api_key)
         except Exception as e:
             console.print(f"[red]Error initializing Gemini client: {e}[/red]")
-            return
-        
-        # Verify playlist
+            return []
+
+        # Fetch tracks
         console.print(f"Fetching tracks for playlist {playlist_id}...")
         tracks = playlist.get_tracks(playlist_id)
         if not tracks:
             console.print("No tracks found or error fetching.")
-            return
+            return []
 
-        results = []
+        results: list[dict] = []
         tracker = TokenTracker()
-        
+        db = storage.init_db()
+        total = len(tracks)
+
+        _report(0, total, "Fetching tracks...", tracker)
+
         with Progress() as progress:
-            task = progress.add_task("Processing tracks...", total=len(tracks))
-            
-            for track in tracks:
+            task = progress.add_task("Processing tracks...", total=total)
+
+            for i, track in enumerate(tracks):
                 video_id = track.get('videoId')
-                title = track.get('title')
+                title = track.get('title', 'Unknown')
                 artists = ", ".join([a['name'] for a in track.get('artists', [])])
-                
+
                 if not video_id:
                     progress.advance(task)
                     continue
-                    
+
+                _report(i, total, f"Processing: {title} - {artists}", tracker)
+
+                # --- Deduplication: skip if already in global catalog ---
+                existing_track = storage.get_track_by_id(db, video_id)
+                if existing_track:
+                    progress.console.print(
+                        f"[dim]Skipping (cached): {title} - {artists}[/dim]"
+                    )
+                    existing_track['owner'] = owner
+                    storage.save_track(db, existing_track)
+                    progress.advance(task)
+                    continue
+
                 progress.console.print(f"Processing: {title} - {artists}")
-                
-                # Download
+
+                # Download & enrich
                 try:
                     filename = download_track(video_id)
-                    
-                    # Enrich
                     metadata = enrich_track(client, filename, title, artists, tracker)
-                    
-                    # Check for error in metadata
-                    if metadata.get('error') or "Error" in metadata.get('genres', []):
+
+                    is_error = bool(metadata.get('error'))
+                    if is_error:
                         tracker.failed += 1
                     else:
                         tracker.successful += 1
-                    
-                    # Cleanup specific file (optional now but good to keep to save space during run)
+
+                    # Cleanup downloaded file
                     if os.path.exists(filename):
                         os.remove(filename)
-                    
+
                     track_data = {
                         "videoId": video_id,
                         "title": title,
                         "artists": artists,
                         "album": track.get('album', {}).get('name') if track.get('album') else None,
+                        "thumbnails": track.get('thumbnails', []),
                         "genres": metadata.get('genres', []),
                         "moods": metadata.get('moods', []),
-                        "status": "error" if metadata.get('error') else "success",
+                        "instruments": metadata.get('instruments', []),
+                        "bpm": metadata.get('bpm'),
+                        "status": "error" if is_error else "success",
+                        "success": not is_error,
                         "error_message": metadata.get('error'),
                         "url": f"https://music.youtube.com/watch?v={video_id}",
-                        "owner": "local" # CLI default, overridden by caller if needed (actually caller can't override easily unless we pass it in, but we can set it before saving)
+                        "owner": owner,
                     }
+
+                    storage.save_track(db, track_data)
                     results.append(track_data)
-                    
+                    _report(i, total, f"Processed: {title}", tracker, track_data)
+
                 except Exception as e:
-                     console.print(f"[red]Failed to process {title}: {e}[/red]")
-                     tracker.failed += 1
-                     results.append({
+                    console.print(f"[red]Failed to process {title}: {e}[/red]")
+                    tracker.failed += 1
+                    err_track_data = {
                         "videoId": video_id,
                         "title": title,
                         "artists": artists,
+                        "album": track.get('album', {}).get('name') if track.get('album') else None,
+                        "thumbnails": track.get('thumbnails', []),
+                        "genres": [],
+                        "moods": [],
+                        "instruments": [],
+                        "bpm": None,
                         "status": "error",
-                        "error_message": str(e)
-                     })
-                
+                        "success": False,
+                        "error_message": str(e),
+                        "url": f"https://music.youtube.com/watch?v={video_id}",
+                        "owner": owner,
+                    }
+                    storage.save_track(db, err_track_data)
+                    results.append(err_track_data)
+                    _report(i, total, f"Error: {title}", tracker, err_track_data)
+
                 progress.advance(task)
 
-        # Save results to TinyDB
-        from song_shake import storage
-        db = storage.init_db()
-        for res in results:
-            storage.save_track(db, res)
+        _report(total, total, "Enrichment complete", tracker)
         console.print(f"[green]Done! Saved {len(results)} tracks to database.[/green]")
-        
-        # Print Summary
         tracker.print_summary()
+
+        # Save enrichment history
+        try:
+            storage.save_enrichment_history(
+                playlist_id,
+                owner,
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'item_count': len(results),
+                    'status': 'completed',
+                },
+                db,
+            )
+        except Exception as h_err:
+            console.print(f"[dim]Warning: failed to save history: {h_err}[/dim]")
+
+        return results
+
+    except Exception as e:
+        # Save error history
+        try:
+            storage.save_enrichment_history(
+                playlist_id,
+                owner,
+                {
+                    'timestamp': datetime.now().isoformat(),
+                    'item_count': 0,
+                    'status': 'error',
+                    'error': str(e),
+                },
+            )
+        except Exception:
+            pass
+        raise
 
     finally:
         # Final cleanup

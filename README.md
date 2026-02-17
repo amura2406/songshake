@@ -80,7 +80,6 @@ song-shake setup-auth
 *   Filter for `browse`
 *   Refresh page
 *   Right-click a request > Copy > Copy Request Headers
-*   Right-click a request > Copy > Copy Request Headers
 *   Paste into the terminal
 
 ### 1a. (Alternative) Web Interface Login
@@ -194,7 +193,7 @@ A modern, responsive React application.
 **Solution**: Song Shake implements a **smart fallback**. If the internal API fails, it automatically switches to the public **YouTube Data API v3** using the same credentials. This allows users without a channel (e.g., pure GSuite or standard Gmail users) to still fetch their playlists and tracks perfectly.
 
 ### 2. Authentication Flow
-- **CLI**: Uses Device Code Flow (requires pasting a code on a separate device).
+- **CLI**: Uses Browser Header Paste (copy request headers from DevTools and paste into the terminal).
 - **Web**: Uses Web Application Flow (standard "Login with Google" redirect).
 - **Token Compatibility**: Both flows generate an `oauth.json` file. The backend is designed to handle both, but for the best Web UI experience, use the Web Login button.
 
@@ -224,10 +223,12 @@ song-shake --help
 
 ## Configuration
 
-The tool uses `.env` file for credentials.
--   `GOOGLE_API_KEY`: Your Gemini API Key.
+The tool uses `.env` file for credentials (see `.env.template`):
+-   `GOOGLE_API_KEY`: Your Gemini API Key (required for enrichment).
+-   `GOOGLE_CLIENT_ID`: Google OAuth Web Application Client ID (optional, for Web UI login).
+-   `GOOGLE_CLIENT_SECRET`: Google OAuth Web Application Client Secret (optional, for Web UI login).
 
-If `.env` is missing, you will be prompted to enter it.
+If `GOOGLE_API_KEY` is missing, the CLI will prompt you to enter it.
 
 ## Quirks & Notes
 

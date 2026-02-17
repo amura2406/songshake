@@ -68,12 +68,15 @@ def show(
     table.add_column("Artist", style="magenta")
     table.add_column("Genres", style="green")
     table.add_column("Moods", style="yellow")
+    table.add_column("Instruments", style="blue")
+    table.add_column("BPM", style="dim")
     table.add_column("Status", style="blue")
     
     for idx, track in enumerate(display_tracks, 1):
         genres = ", ".join(track.get('genres', []))
         moods = ", ".join(track.get('moods', []))
-        # No truncation as requested
+        instruments = ", ".join(track.get('instruments', []))
+        bpm = str(track.get('bpm', '')) if track.get('bpm') else ''
         
         table.add_row(
             str(idx),
@@ -81,6 +84,8 @@ def show(
             track.get('artists', 'Unknown'),
             genres,
             moods,
+            instruments,
+            bpm,
             track.get('status', 'Unknown')
         )
         

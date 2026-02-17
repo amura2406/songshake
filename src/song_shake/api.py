@@ -406,143 +406,40 @@ def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
         raise HTTPException(status_code=500, detail=str(e))
 
 def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str):
+    """Background task that delegates to the shared enrichment logic."""
+    results: list[dict] = []
+
+    def _on_progress(progress: dict):
+        enrichment_tasks[task_id]["status"] = "running"
+        enrichment_tasks[task_id]["current"] = progress["current"]
+        enrichment_tasks[task_id]["total"] = progress["total"]
+        enrichment_tasks[task_id]["message"] = progress["message"]
+        enrichment_tasks[task_id]["tokens"] = progress.get("tokens", 0)
+        enrichment_tasks[task_id]["cost"] = progress.get("cost", 0)
+        if progress.get("track_data"):
+            results.append(progress["track_data"])
+            enrichment_tasks[task_id]["results"] = results
+
     try:
         print(f"DEBUG: Starting enrichment for playlist={playlist_id} owner={owner} task={task_id}")
         enrichment_tasks[task_id]["status"] = "running"
-        enrichment_tasks[task_id]["message"] = "Fetching tracks..."
+        enrichment_tasks[task_id]["message"] = "Initializing..."
         enrichment_tasks[task_id]["tokens"] = 0
         enrichment_tasks[task_id]["cost"] = 0
-        
-        tracks = playlist.get_tracks(playlist_id)
-        if not tracks:
-             enrichment_tasks[task_id]["status"] = "error"
-             enrichment_tasks[task_id]["message"] = "No tracks found"
-             return
 
-        enrichment_tasks[task_id]["total"] = len(tracks)
-        client = genai.Client(api_key=api_key)
-        tracker = enrichment.TokenTracker()
-        
-        results = []
-        db = storage.init_db()
+        enrichment.process_playlist(
+            playlist_id=playlist_id,
+            owner=owner,
+            api_key=api_key,
+            on_progress=_on_progress,
+        )
 
-        for i, track in enumerate(tracks):
-            enrichment_tasks[task_id]["current"] = i
-            title = track.get('title', 'Unknown')
-            artists = ", ".join([a['name'] for a in track.get('artists', [])])
-            enrichment_tasks[task_id]["message"] = f"Processing: {title} - {artists}"
-            
-            video_id = track.get('videoId')
-            if not video_id:
-                continue
-
-            # Deduplication: Check if track exists globally
-            existing_track = storage.get_track_by_id(db, video_id)
-            if existing_track:
-                enrichment_tasks[task_id]["message"] = f"Skipping {title}: Found directly in local dataset"
-                print(f"DEBUG: Skipping {video_id} - already exists in songs.db")
-                existing_track['owner'] = owner
-                storage.save_track(db, existing_track)
-                continue
-
-            try:
-                filename = enrichment.download_track(video_id)
-                metadata = enrichment.enrich_track(client, filename, title, artists, tracker)
-                
-                if os.path.exists(filename):
-                    os.remove(filename)
-                
-                is_error = bool(metadata.get('error'))
-                track_data = {
-                    "videoId": video_id,
-                    "title": title,
-                    "artists": artists,
-                    "album": track.get('album', {}).get('name') if track.get('album') else None,
-                    "thumbnails": track.get('thumbnails', []),
-                    "genres": metadata.get('genres', []),
-                    "moods": metadata.get('moods', []),
-                    "instruments": metadata.get('instruments', []),
-                    "bpm": metadata.get('bpm'),
-                    "status": "error" if is_error else "success",
-                    "success": not is_error,
-                    "error_message": metadata.get('error'),
-                    "url": f"https://music.youtube.com/watch?v={video_id}",
-                    "owner": owner
-                }
-                
-                storage.save_track(db, track_data)
-                results.append(track_data)
-                
-                # Update task immediately so stream sees it
-                enrichment_tasks[task_id]["results"] = results
-                enrichment_tasks[task_id]["tokens"] = getattr(tracker, 'input_tokens', 0) + getattr(tracker, 'output_tokens', 0)
-                enrichment_tasks[task_id]["cost"] = tracker.get_cost() if hasattr(tracker, 'get_cost') else 0
-                
-            except Exception as e:
-                print(f"Error processing {title}: {e}")
-                err_track_data = {
-                    "videoId": video_id,
-                    "title": title,
-                    "artists": artists,
-                    "album": track.get('album', {}).get('name') if track.get('album') else None,
-                    "thumbnails": track.get('thumbnails', []),
-                    "genres": [],
-                    "moods": [],
-                    "instruments": [],
-                    "bpm": None,
-                    "status": "error",
-                    "success": False,
-                    "error_message": str(e),
-                    "url": f"https://music.youtube.com/watch?v={video_id}",
-                    "owner": owner
-                }
-                storage.save_track(db, err_track_data)
-                results.append(err_track_data)
-                enrichment_tasks[task_id]["results"] = results
-        
         enrichment_tasks[task_id]["status"] = "completed"
         enrichment_tasks[task_id]["message"] = "Enrichment complete"
-        enrichment_tasks[task_id]["current"] = len(tracks)
-        enrichment_tasks[task_id]["tokens"] = getattr(tracker, 'input_tokens', 0) + getattr(tracker, 'output_tokens', 0)
-        enrichment_tasks[task_id]["cost"] = tracker.get_cost() if hasattr(tracker, 'get_cost') else 0
-        
-        # Save history on success
-        try:
-            print(f"DEBUG: Saving history for {playlist_id} owner={owner}")
-            from datetime import datetime
-            storage.save_enrichment_history(
-                playlist_id, 
-                owner, 
-                {
-                    'timestamp': datetime.now().isoformat(),
-                    'item_count': len(results),
-                    'status': 'completed'
-                },
-                db
-            )
-        except Exception as h_err:
-            print(f"Failed to save history: {h_err}")
 
     except Exception as e:
         enrichment_tasks[task_id]["status"] = "error"
         enrichment_tasks[task_id]["message"] = str(e)
-        
-        # Save error history too?
-        try:
-            from datetime import datetime
-            storage.save_enrichment_history(
-                playlist_id, 
-                owner, 
-                {
-                    'timestamp': datetime.now().isoformat(),
-                    'item_count': 0,
-                    'status': 'error',
-                    'error': str(e)
-                },
-                db
-            )
-        except:
-            pass
 
 @app.post("/enrichment")
 def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTasks):
