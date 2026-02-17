@@ -1,3 +1,5 @@
+![Song Shake Banner](banner.png)
+
 # Song Shake (v0.5.1)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
