@@ -376,22 +376,29 @@ class TestProcessPlaylist:
         assert "Network timeout" in results[0]["error_message"]
 
     def test_wipe_flag(self):
-        """Should call storage_port.wipe_db() when wipe=True."""
-        existing = {"v1": {"videoId": "v1"}}
+        """Should re-process cached tracks when wipe=True (skip dedup)."""
+        tracks = [_make_track("v1", "Song A", "Art A")]
+        existing = {"v1": {"videoId": "v1", "title": "Old Song", "genres": ["Rock"]}}
         storage = FakeStorage(existing_tracks=existing)
+        downloader = FakeDownloader()
+        enricher = FakeEnricher()
 
-        process_playlist(
+        results = process_playlist(
             "PL_WIPE",
+            owner="tester",
             wipe=True,
             storage_port=storage,
-            playlist_fetcher=FakePlaylistFetcher([]),
-            audio_downloader=FakeDownloader(),
-            audio_enricher=FakeEnricher(),
+            playlist_fetcher=FakePlaylistFetcher(tracks),
+            audio_downloader=downloader,
+            audio_enricher=enricher,
         )
 
-        assert storage.wipe_called is True
-        # Existing tracks should be wiped
-        assert storage.get_track_by_id("v1") is None
+        # wipe=True means the track is re-processed even though it was cached
+        assert len(results) == 1
+        assert len(downloader.calls) == 1
+        assert len(enricher.calls) == 1
+        # wipe_db should NOT be called (we skip dedup, not wipe DB)
+        assert storage.wipe_called is False
 
     def test_progress_callback_called(self):
         """Should invoke on_progress callback with correct shape."""

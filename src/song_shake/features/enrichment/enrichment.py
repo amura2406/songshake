@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
@@ -21,7 +22,7 @@ logger = get_logger(__name__)
 
 console = Console()
 
-TEMP_DIR = "temp_downloads"
+TEMP_DIR_BASE = "temp_downloads"
 
 # Pricing for Gemini 3 Flash (Preview)
 # Input Audio: $1.00 / 1M tokens
@@ -76,7 +77,7 @@ class TokenTracker:
         console.print(table)
 
 
-def download_track(video_id: str, output_dir: str = TEMP_DIR) -> str:
+def download_track(video_id: str, output_dir: str = TEMP_DIR_BASE) -> str:
     """Download track audio. Returns path to file."""
     os.makedirs(output_dir, exist_ok=True)
     # yt-dlp options to force audio only
@@ -213,6 +214,7 @@ def process_playlist(
     wipe: bool = False,
     api_key: str | None = None,
     on_progress: callable = None,
+    cancel_check: callable = None,
     # --- DI ports (None = construct production adapters) ---
     storage_port: StoragePort | None = None,
     playlist_fetcher: PlaylistFetcher | None = None,
@@ -232,6 +234,8 @@ def process_playlist(
         on_progress: Optional callback receiving a dict with keys:
             current (int), total (int), message (str),
             tokens (int), cost (float), track_data (dict | None).
+        cancel_check: Optional callable invoked before each track.
+            Should raise an exception (e.g. CancelledError) to abort.
         storage_port: StoragePort implementation. None = TinyDB production adapter.
         playlist_fetcher: PlaylistFetcher implementation. None = YTMusic production adapter.
         audio_downloader: AudioDownloader implementation. None = yt-dlp production adapter.
@@ -285,13 +289,12 @@ def process_playlist(
                 "track_data": track_data,
             })
 
-    # Initial cleanup
-    if os.path.exists(TEMP_DIR):
-        shutil.rmtree(TEMP_DIR, ignore_errors=True)
+    # Create a unique temp directory for this job to avoid collisions
+    job_temp_dir = os.path.join(TEMP_DIR_BASE, uuid.uuid4().hex[:12])
+    os.makedirs(job_temp_dir, exist_ok=True)
 
     try:
         if wipe:
-            storage_port.wipe_db()
             console.print("[yellow]Database wiped.[/yellow]")
 
         # Fetch tracks
@@ -311,6 +314,10 @@ def process_playlist(
             task = progress.add_task("Processing tracks...", total=total)
 
             for i, track in enumerate(tracks):
+                # Check for cancellation before each track
+                if cancel_check is not None:
+                    cancel_check()
+
                 video_id = track.get('videoId')
                 title = track.get('title', 'Unknown')
                 artists = ", ".join([a['name'] for a in track.get('artists', [])])
@@ -322,21 +329,23 @@ def process_playlist(
                 _report(i, total, f"Processing: {title} - {artists}", tracker)
 
                 # --- Deduplication: skip if already in global catalog ---
-                existing_track = storage_port.get_track_by_id(video_id)
-                if existing_track:
-                    progress.console.print(
-                        f"[dim]Skipping (cached): {title} - {artists}[/dim]"
-                    )
-                    existing_track['owner'] = owner
-                    storage_port.save_track(existing_track)
-                    progress.advance(task)
-                    continue
+                # When wipe=True (Fresh Scan), re-process every track
+                if not wipe:
+                    existing_track = storage_port.get_track_by_id(video_id)
+                    if existing_track:
+                        progress.console.print(
+                            f"[dim]Skipping (cached): {title} - {artists}[/dim]"
+                        )
+                        existing_track['owner'] = owner
+                        storage_port.save_track(existing_track)
+                        progress.advance(task)
+                        continue
 
                 progress.console.print(f"Processing: {title} - {artists}")
 
                 # Download & enrich
                 try:
-                    filename = audio_downloader.download(video_id, TEMP_DIR)
+                    filename = audio_downloader.download(video_id, job_temp_dir)
                     metadata = audio_enricher.enrich(filename, title, artists)
 
                     # Update tracker from enricher usage metadata
@@ -418,9 +427,9 @@ def process_playlist(
         raise
 
     finally:
-        # Final cleanup
-        if os.path.exists(TEMP_DIR):
+        # Clean up only this job's temp directory
+        if os.path.exists(job_temp_dir):
             try:
-                shutil.rmtree(TEMP_DIR, ignore_errors=True)
+                shutil.rmtree(job_temp_dir, ignore_errors=True)
             except Exception:
                 pass

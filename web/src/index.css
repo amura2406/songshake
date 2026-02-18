@@ -174,3 +174,21 @@
         @apply bg-background-light dark:bg-background-dark font-display text-slate-800 dark:text-slate-200 antialiased;
     }
 }
+
+/* --- Job System Animations --- */
+
+.glow-text {
+    animation: glow-pulse 1.5s ease-in-out;
+}
+
+@keyframes glow-pulse {
+
+    0%,
+    100% {
+        box-shadow: none;
+    }
+
+    50% {
+        box-shadow: 0 0 12px rgba(175, 37, 244, 0.6), 0 0 24px rgba(175, 37, 244, 0.3);
+    }
+}

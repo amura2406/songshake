@@ -55,7 +55,7 @@ def _override_ytmusic(yt_mock):
 class TestGetPlaylists:
     """Tests for GET /playlists."""
 
-    @patch("song_shake.features.songs.routes_playlists.storage.get_all_active_tasks")
+    @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
     def test_returns_playlists_with_liked_music(self, mock_history, mock_tasks):
         """Should return playlists with Liked Music prepended when not present."""
@@ -73,7 +73,7 @@ class TestGetPlaylists:
         # Original 2 playlists + Liked Music = 3
         assert len(data) == 3
 
-    @patch("song_shake.features.songs.routes_playlists.storage.get_all_active_tasks")
+    @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
     def test_does_not_duplicate_liked_music(self, mock_history, mock_tasks):
         """Should not add Liked Music if already present."""
@@ -90,7 +90,7 @@ class TestGetPlaylists:
         liked_count = sum(1 for p in data if p["playlistId"] == "LM")
         assert liked_count == 1
 
-    @patch("song_shake.features.songs.routes_playlists.storage.get_all_active_tasks")
+    @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
     def test_merges_enrichment_history(self, mock_history, mock_tasks):
         """Should merge enrichment history into playlist responses."""
@@ -110,14 +110,14 @@ class TestGetPlaylists:
         assert pl_abc["last_processed"] == "2026-01-15T10:00:00"
         assert pl_abc["last_status"] == "completed"
 
-    @patch("song_shake.features.songs.routes_playlists.storage.get_all_active_tasks")
+    @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
-    def test_marks_active_tasks(self, mock_history, mock_tasks):
+    def test_marks_active_tasks(self, mock_history, mock_jobs):
         """Should flag playlists with active enrichment tasks."""
         _override_ytmusic(_mock_ytmusic())
         mock_history.return_value = {}
-        mock_tasks.return_value = {
-            "PL_abc_a1b2c3d4": {"status": "running", "task_id": "PL_abc_a1b2c3d4"}
+        mock_jobs.return_value = {
+            "PL_abc": {"id": "job_PL_abc_a1b2c3d4", "status": "running", "playlist_id": "PL_abc"}
         }
 
         response = client.get("/playlists")
@@ -125,7 +125,7 @@ class TestGetPlaylists:
         data = response.json()
         pl_abc = next(p for p in data if p["playlistId"] == "PL_abc")
         assert pl_abc["is_running"] is True
-        assert pl_abc["active_task_id"] == "PL_abc_a1b2c3d4"
+        assert pl_abc["active_task_id"] == "job_PL_abc_a1b2c3d4"
 
     def test_returns_401_when_not_authenticated(self):
         """Should return 401 when YTMusic auth fails."""
@@ -140,7 +140,7 @@ class TestGetPlaylists:
 
         assert response.status_code == 401
 
-    @patch("song_shake.features.songs.routes_playlists.storage.get_all_active_tasks")
+    @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
     def test_falls_back_to_data_api(self, mock_history, mock_tasks):
         """Should fallback to Data API when library playlists fail."""
@@ -160,7 +160,7 @@ class TestGetPlaylists:
             assert response.status_code == 200
             mock_fallback.assert_called_once()
 
-    @patch("song_shake.features.songs.routes_playlists.storage.get_all_active_tasks")
+    @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
     def test_handles_history_merge_error_gracefully(self, mock_history, mock_tasks):
         """Should return playlists even when history merge fails."""

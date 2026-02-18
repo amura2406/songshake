@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.6.0)
+# Song Shake (v0.7.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
 
@@ -10,6 +10,9 @@ This tool takes your YouTube Music playlists and enriches them with **Genres** a
 
 -   **Web Interface (New!)**: Modern UI for managing enrinchment (Login, Dashboard, Progress, Results).
 -   **Background Job Support**: Identify running enrichment tasks on the dashboard and resume viewing real-time progress without double-processing.
+-   **Concurrent Job Safety**: Thread-safe database access, atomic job creation, and isolated temp directories prevent race conditions when running multiple enrichment jobs simultaneously.
+-   **Real-Time AI Usage Tracking**: Live token count and cost updates via SSE with animated footer display.
+-   **Zombie Job Recovery**: Jobs orphaned by server restart are automatically detected and cleanly cancelled.
 -   **CLI Tool**: Classic command-line interface for quick operations.
 -   **Smart Enrichment**: Uses AI to analyze audio and determine genre/mood. Core logic is fully testable via Protocol-based dependency injection.
 -   **Local Database**: Stores results in `songs.db` (TinyDB).

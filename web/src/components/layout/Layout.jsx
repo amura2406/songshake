@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getCurrentUser, logoutUser, getTags } from '../../api';
 import logoImg from '../../assets/logo.png';
+import JobIcon from '../../features/jobs/JobIcon';
+import AIUsageFooter from '../../features/jobs/AIUsageFooter';
 
 const Layout = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -84,55 +86,58 @@ const Layout = ({ children }) => {
 
         <div className="flex-1"></div>
 
-        {/* Profile dropdown */}
+        {/* Job icon + Profile dropdown */}
         {user && (
-          <div className="relative" ref={profileRef}>
-            <button
-              onClick={() => setProfileOpen(prev => !prev)}
-              className="flex items-center gap-2 rounded-full p-[2px] bg-gradient-to-tr from-primary to-blue-500 hover:shadow-neon transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background-dark"
-              aria-expanded={profileOpen}
-              aria-haspopup="true"
-              aria-label="User menu"
-            >
-              <div className="h-9 w-9 rounded-full overflow-hidden">
-                {user.thumbnail ? (
-                  <img
-                    src={user.thumbnail}
-                    alt={user.name}
-                    className="h-full w-full rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="h-full w-full rounded-full bg-surface-dark flex items-center justify-center">
-                    <span className="material-icons text-sm text-slate-400">person</span>
-                  </div>
-                )}
-              </div>
-            </button>
-
-            {profileOpen && (
-              <div
-                role="menu"
-                className="absolute right-0 top-full mt-2 w-56 rounded-xl bg-surface-dark/95 backdrop-blur-xl border border-white/10 shadow-2xl py-3 z-50 animate-in"
-                style={{ animation: 'fadeSlideIn 0.15s ease-out' }}
+          <div className="flex items-center gap-3">
+            <JobIcon />
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setProfileOpen(prev => !prev)}
+                className="flex items-center gap-2 rounded-full p-[2px] bg-gradient-to-tr from-primary to-blue-500 hover:shadow-neon transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background-dark"
+                aria-expanded={profileOpen}
+                aria-haspopup="true"
+                aria-label="User menu"
               >
-                <div className="px-4 pb-3 border-b border-white/10">
-                  <p className="text-sm font-semibold text-white truncate">{user.name}</p>
-                  {user.email && (
-                    <p className="text-xs text-slate-400 truncate mt-0.5">{user.email}</p>
+                <div className="h-9 w-9 rounded-full overflow-hidden">
+                  {user.thumbnail ? (
+                    <img
+                      src={user.thumbnail}
+                      alt={user.name}
+                      className="h-full w-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-full w-full rounded-full bg-surface-dark flex items-center justify-center">
+                      <span className="material-icons text-sm text-slate-400">person</span>
+                    </div>
                   )}
                 </div>
-                <div className="pt-2 px-2">
-                  <button
-                    onClick={handleLogout}
-                    role="menuitem"
-                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                  >
-                    <span className="material-icons text-lg">logout</span>
-                    Sign out
-                  </button>
+              </button>
+
+              {profileOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-2 w-56 rounded-xl bg-surface-dark/95 backdrop-blur-xl border border-white/10 shadow-2xl py-3 z-50 animate-in"
+                  style={{ animation: 'fadeSlideIn 0.15s ease-out' }}
+                >
+                  <div className="px-4 pb-3 border-b border-white/10">
+                    <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+                    {user.email && (
+                      <p className="text-xs text-slate-400 truncate mt-0.5">{user.email}</p>
+                    )}
+                  </div>
+                  <div className="pt-2 px-2">
+                    <button
+                      onClick={handleLogout}
+                      role="menuitem"
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <span className="material-icons text-lg">logout</span>
+                      Sign out
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </nav>
@@ -251,6 +256,11 @@ const Layout = ({ children }) => {
               </div>
             );
           })()}
+
+          {/* AI Usage Footer */}
+          <div className="p-4 border-t border-white/5 shrink-0">
+            <AIUsageFooter owner={user?.id} />
+          </div>
         </aside>
 
         {/* Main Content Area */}

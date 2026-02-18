@@ -16,8 +16,8 @@ configure_logging()
 
 from song_shake.features.auth.routes import router as auth_router
 from song_shake.features.songs.routes_playlists import router as playlists_router
-from song_shake.features.enrichment.routes import router as enrichment_router
 from song_shake.features.songs.routes import router as songs_router
+from song_shake.features.jobs.routes import router as jobs_router
 
 app = FastAPI(title="Song Shake API")
 
@@ -33,8 +33,8 @@ app.add_middleware(
 # Include route modules
 app.include_router(auth_router)
 app.include_router(playlists_router)
-app.include_router(enrichment_router)
 app.include_router(songs_router)
+app.include_router(jobs_router)
 
 if __name__ == "__main__":
     uvicorn.run("song_shake.api:app", host="0.0.0.0", port=8000, reload=True)
