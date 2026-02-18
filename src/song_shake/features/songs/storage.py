@@ -150,3 +150,38 @@ def get_all_history(db: TinyDB = None) -> dict:
         db = init_db()
     history_table = db.table('history')
     return {r['playlistId']: r for r in history_table.all()}
+
+
+# --- Enrichment Task State ---
+
+def save_task_state(task_id: str, state: dict, db: TinyDB = None) -> None:
+    """Persist enrichment task state to database."""
+    if db is None:
+        db = init_db()
+    tasks_table = db.table('tasks')
+    Task = Query()
+    record = {"task_id": task_id, **state}
+    tasks_table.upsert(record, Task.task_id == task_id)
+
+
+def get_task_state(task_id: str, db: TinyDB = None) -> dict | None:
+    """Retrieve enrichment task state by task_id."""
+    if db is None:
+        db = init_db()
+    tasks_table = db.table('tasks')
+    Task = Query()
+    results = tasks_table.search(Task.task_id == task_id)
+    return results[0] if results else None
+
+
+def get_all_active_tasks(db: TinyDB = None) -> dict:
+    """Get all active (pending/running) enrichment tasks. Returns dict keyed by task_id."""
+    if db is None:
+        db = init_db()
+    tasks_table = db.table('tasks')
+    Task = Query()
+    active = tasks_table.search(
+        (Task.status == "pending") | (Task.status == "running")
+    )
+    return {t['task_id']: t for t in active}
+

@@ -1,0 +1,290 @@
+"""Authentication routes for Song Shake API."""
+
+import json
+import os
+import time
+
+import requests
+from dotenv import load_dotenv
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
+from typing import Optional
+from urllib.parse import urlencode
+from ytmusicapi import YTMusic, setup
+from ytmusicapi.auth.oauth import OAuthCredentials, RefreshingToken
+
+from song_shake.features.auth import auth
+from song_shake.platform.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+# --- Models ---
+
+class LoginRequest(BaseModel):
+    headers_raw: Optional[str] = None
+
+
+class OAuthInitRequest(BaseModel):
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+
+
+class OAuthPollRequest(BaseModel):
+    device_code: str
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+
+
+# --- Helpers ---
+
+OAUTH_FILE = "oauth.json"
+
+
+def get_ytmusic() -> YTMusic:
+    """Get an authenticated YTMusic instance or raise 401."""
+    try:
+        return auth.get_ytmusic()
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+
+
+# --- Routes ---
+
+@router.get("/logout")
+def logout():
+    if os.path.exists(OAUTH_FILE):
+        os.remove(OAUTH_FILE)
+    return {"status": "logged_out"}
+
+
+@router.get("/me")
+def get_current_user():
+    if not os.path.exists(OAUTH_FILE):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    try:
+        with open(OAUTH_FILE) as f:
+            tokens = json.load(f)
+
+        token = tokens.get("access_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="No access token")
+
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 1. Try Channel Info (best for stable ID)
+        res = requests.get(
+            "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+            headers=headers,
+            timeout=10,
+        )
+
+        user_id = "web_user"
+        name = "Authenticated User"
+        thumb = None
+
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("items"):
+                item = data["items"][0]
+                user_id = item["id"]
+                snippet = item["snippet"]
+                name = snippet.get("title", "YouTube User")
+                thumb = snippet["thumbnails"]["default"]["url"]
+                return {
+                    "id": user_id,
+                    "name": name,
+                    "thumbnail": thumb,
+                    "authenticated": True,
+                }
+
+        # 2. Try UserInfo for name/email (requires profile/email scope)
+        try:
+            res2 = requests.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers=headers,
+                timeout=10,
+            )
+            if res2.status_code == 200:
+                uinfo = res2.json()
+                user_id = uinfo.get("id") or uinfo.get("email") or "web_user"
+                name = uinfo.get("name") or uinfo.get("email") or "User"
+                thumb = uinfo.get("picture")
+                return {
+                    "id": user_id,
+                    "name": name,
+                    "thumbnail": thumb,
+                    "authenticated": True,
+                }
+        except Exception:
+            pass  # userinfo endpoint may not be available with current scopes
+
+        # 3. Fallback
+        return {
+            "id": "web_user",
+            "name": "Authenticated User (No Channel)",
+            "thumbnail": None,
+            "authenticated": True,
+            "note": "Could not fetch channel profile",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_current_user_failed", error=str(e))
+        return {"authenticated": False}
+
+
+@router.get("/status")
+def auth_status():
+    if os.path.exists(OAUTH_FILE):
+        return {"authenticated": True}
+    return {"authenticated": False}
+
+
+@router.post("/login")
+def login(request: LoginRequest):
+    if not request.headers_raw:
+        raise HTTPException(status_code=400, detail="Headers required")
+
+    try:
+        is_json = False
+        try:
+            json.loads(request.headers_raw)
+            is_json = True
+        except json.JSONDecodeError:
+            pass
+
+        if is_json:
+            with open(OAUTH_FILE, "w") as f:
+                f.write(request.headers_raw)
+        else:
+            setup(filepath=OAUTH_FILE, headers_raw=request.headers_raw)
+
+        YTMusic(OAUTH_FILE)
+        return {"status": "success"}
+    except Exception as e:
+        if os.path.exists(OAUTH_FILE):
+            os.remove(OAUTH_FILE)
+        raise HTTPException(status_code=400, detail=f"Invalid headers: {str(e)}")
+
+
+@router.get("/config")
+def auth_config():
+    load_dotenv()
+    has_env = bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET"))
+    return {"use_env": has_env}
+
+
+@router.get("/google/login")
+def google_auth_login():
+    load_dotenv()
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    if not client_id:
+        raise HTTPException(status_code=400, detail="GOOGLE_CLIENT_ID not set in .env")
+
+    redirect_uri = "http://localhost:8000/auth/google/callback"
+    scope = "https://www.googleapis.com/auth/youtube"
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": scope,
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+    url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    return RedirectResponse(url)
+
+
+@router.get("/google/callback")
+def google_auth_callback(code: str):
+    load_dotenv()
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    redirect_uri = "http://localhost:8000/auth/google/callback"
+
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=400, detail="Credentials not set in .env")
+
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri,
+    }
+
+    try:
+        response = requests.post(token_url, data=data, timeout=10)
+        response.raise_for_status()
+        tokens = response.json()
+
+        tokens["expires_at"] = int(time.time()) + tokens.get("expires_in", 3600)
+
+        with open(OAUTH_FILE, "w") as f:
+            json.dump(tokens, f)
+
+        return RedirectResponse("http://localhost:5173/")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {e}")
+
+
+@router.post("/google/init")
+def google_auth_init(request: OAuthInitRequest):
+    try:
+        load_dotenv()
+        client_id = request.client_id or os.getenv("GOOGLE_CLIENT_ID")
+        client_secret = request.client_secret or os.getenv("GOOGLE_CLIENT_SECRET")
+
+        if not client_id or not client_secret:
+            raise HTTPException(
+                status_code=400,
+                detail="Client ID and Secret required (not found in request or env)",
+            )
+
+        creds = OAuthCredentials(client_id=client_id, client_secret=client_secret)
+        code = creds.get_code()
+        return code
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/google/poll")
+def google_auth_poll(request: OAuthPollRequest):
+    try:
+        load_dotenv()
+        client_id = request.client_id or os.getenv("GOOGLE_CLIENT_ID")
+        client_secret = request.client_secret or os.getenv("GOOGLE_CLIENT_SECRET")
+
+        if not client_id or not client_secret:
+            raise HTTPException(status_code=400, detail="Client ID and Secret required")
+
+        creds = OAuthCredentials(client_id=client_id, client_secret=client_secret)
+        token = creds.token_from_code(request.device_code)
+
+        final_token = token.copy()
+        final_token["client_id"] = client_id
+        final_token["client_secret"] = client_secret
+
+        ref_token = RefreshingToken(credentials=creds, **token)
+        ref_token.update(ref_token.as_dict())
+
+        with open(OAUTH_FILE, "w") as f:
+            f.write(ref_token.as_json())
+
+        return {"status": "success"}
+
+    except Exception as e:
+        err_str = str(e).lower()
+        if "authorization_pending" in err_str or "precondition_required" in err_str:
+            return {"status": "pending"}
+        raise HTTPException(status_code=400, detail=str(e))

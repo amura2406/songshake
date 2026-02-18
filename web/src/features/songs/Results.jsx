@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getSongs, getCurrentUser, getTags } from '../api';
+import { getSongs, getCurrentUser, getTags } from '../../api';
 import { Play, Pause, FastForward, Rewind, Volume2 } from 'lucide-react';
 import YouTube from 'react-youtube';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -359,99 +359,99 @@ const Results = () => {
               <span className="material-icons text-4xl mb-4 block opacity-50">music_off</span>
               <p>No tracks found. Clear filters or load a playlist.</p>
             </div>
-            ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-white/5 bg-surface-darker/50">
-                      <th className="px-4 py-3 font-semibold w-16 text-center">Preview</th>
-                      <th className="px-4 py-3 font-semibold w-1/3">Title</th>
-                      <th className="px-4 py-3 font-semibold">Artist</th>
-                      <th className="px-4 py-3 font-semibold">Genre</th>
-                      <th className="px-4 py-3 font-semibold">Mood</th>
-                      <th className="px-4 py-3 font-semibold">Instrument</th>
-                      <th className="px-4 py-3 font-semibold text-center">BPM</th>
-                      <th className="px-4 py-3 font-semibold w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-sm divide-y divide-white/5">
-                    {filteredSongs.map(song => (
-                      <tr
-                        key={song.id}
-                        className={`group hover:bg-white/5 transition-colors ${currentSong?.videoId === song.videoId ? 'bg-primary/5' : ''}`}
-                        onClick={() => setCurrentSong(song)}
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-white/5 bg-surface-darker/50">
+                  <th className="px-4 py-3 font-semibold w-16 text-center">Preview</th>
+                  <th className="px-4 py-3 font-semibold w-1/3">Title</th>
+                  <th className="px-4 py-3 font-semibold">Artist</th>
+                  <th className="px-4 py-3 font-semibold">Genre</th>
+                  <th className="px-4 py-3 font-semibold">Mood</th>
+                  <th className="px-4 py-3 font-semibold">Instrument</th>
+                  <th className="px-4 py-3 font-semibold text-center">BPM</th>
+                  <th className="px-4 py-3 font-semibold w-10"></th>
+                </tr>
+              </thead>
+              <tbody className="text-sm divide-y divide-white/5">
+                {filteredSongs.map(song => (
+                  <tr
+                    key={song.id}
+                    className={`group hover:bg-white/5 transition-colors ${currentSong?.videoId === song.videoId ? 'bg-primary/5' : ''}`}
+                    onClick={() => setCurrentSong(song)}
+                  >
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                      <button
+                        className={`flex items-center justify-center w-8 h-8 rounded-full transition-all mx-auto ${currentSong?.videoId === song.videoId
+                          ? 'bg-primary/20 hover:bg-primary text-primary hover:text-white'
+                          : 'border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white'
+                          }`}
+                        onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
                       >
-                        <td className="px-4 py-4 whitespace-nowrap text-center">
-                          <button
-                            className={`flex items-center justify-center w-8 h-8 rounded-full transition-all mx-auto ${currentSong?.videoId === song.videoId
-                              ? 'bg-primary/20 hover:bg-primary text-primary hover:text-white'
-                              : 'border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white'
-                              }`}
-                            onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
-                          >
-                            <span className="material-icons text-sm">{(currentSong?.videoId === song.videoId && isPlaying) ? 'pause' : 'play_arrow'}</span>
-                          </button>
-                        </td>
-                        <td className="px-4 py-4 cursor-pointer">
-                          <div className="flex items-center gap-4">
-                            {song.thumbnails?.[0]?.url ? (
-                              <img
-                                src={song.thumbnails[0].url}
-                                alt={song.title}
-                                className="h-10 w-10 rounded bg-surface-dark object-cover"
-                              />
-                            ) : (
-                              <div className="h-10 w-10 rounded bg-surface-dark flex items-center justify-center">
-                                <span className="material-icons text-slate-600 border">music_note</span>
-                                </div>
-                            )}
-                            <div className="min-w-0">
-                              <div className={`font-medium truncate transition-colors ${currentSong?.videoId === song.videoId ? 'text-primary' : 'text-white group-hover:text-primary'}`}>
-                                {song.title}
-                              </div>
-                              <div className="text-xs text-slate-500 truncate">ID: {song.videoId}</div>
-                            </div>
+                        <span className="material-icons text-sm">{(currentSong?.videoId === song.videoId && isPlaying) ? 'pause' : 'play_arrow'}</span>
+                      </button>
+                    </td>
+                    <td className="px-4 py-4 cursor-pointer">
+                      <div className="flex items-center gap-4">
+                        {song.thumbnails?.[0]?.url ? (
+                          <img
+                            src={song.thumbnails[0].url}
+                            alt={song.title}
+                            className="h-10 w-10 rounded bg-surface-dark object-cover"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded bg-surface-dark flex items-center justify-center">
+                            <span className="material-icons text-slate-600 border">music_note</span>
                           </div>
-                        </td>
-                        <td className="px-4 py-4 text-slate-300 truncate max-w-[150px]">{song.artists}</td>
-                        <td className="px-4 py-4">
-                          <div className="flex gap-2 flex-wrap">
-                            {song.genres?.map((genre, i) => (
-                              <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">{genre}</span>
-                            ))}
-                            {song.success === false && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
-                            )}
+                        )}
+                        <div className="min-w-0">
+                          <div className={`font-medium truncate transition-colors ${currentSong?.videoId === song.videoId ? 'text-primary' : 'text-white group-hover:text-primary'}`}>
+                            {song.title}
                           </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex gap-2 flex-wrap">
-                            {song.moods?.map((mood, i) => (
-                              <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20 whitespace-nowrap">{mood}</span>
-                            ))}
-                            {(!song.moods || song.moods.length === 0) && (
-                              <span className="text-slate-600 text-[10px] italic">Unknown</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex gap-2 flex-wrap">
-                            {song.instruments?.map((inst, i) => (
-                              <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap">{inst}</span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-center text-slate-300 text-xs font-medium">
-                          {song.bpm || '-'}
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          {song.url && (
-                            <a href={song.url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-white" onClick={e => e.stopPropagation()}>
-                              <span className="material-icons text-sm">open_in_new</span>
-                            </a>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          <div className="text-xs text-slate-500 truncate">ID: {song.videoId}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-slate-300 truncate max-w-[150px]">{song.artists}</td>
+                    <td className="px-4 py-4">
+                      <div className="flex gap-2 flex-wrap">
+                        {song.genres?.map((genre, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">{genre}</span>
+                        ))}
+                        {song.success === false && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex gap-2 flex-wrap">
+                        {song.moods?.map((mood, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20 whitespace-nowrap">{mood}</span>
+                        ))}
+                        {(!song.moods || song.moods.length === 0) && (
+                          <span className="text-slate-600 text-[10px] italic">Unknown</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex gap-2 flex-wrap">
+                        {song.instruments?.map((inst, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap">{inst}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-center text-slate-300 text-xs font-medium">
+                      {song.bpm || '-'}
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      {song.url && (
+                        <a href={song.url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-white" onClick={e => e.stopPropagation()}>
+                          <span className="material-icons text-sm">open_in_new</span>
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}
@@ -489,7 +489,7 @@ const Results = () => {
 
       {/* CyberBase Fixed Player */}
       {currentSong && (
-        <div className="fixed bottom-0 left-0 right-0 bg-surface-darker/95 backdrop-blur-md border-t border-primary/30 h-16 px-6 flex items-center justify-between z-50 shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
+        <div className="fixed bottom-0 left-0 md:left-64 right-0 bg-surface-darker/95 backdrop-blur-md border-t border-primary/30 h-16 px-6 flex items-center justify-between z-50 shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
           <div className="flex items-center gap-3 w-1/3">
             {currentSong.thumbnails?.[0]?.url ? (
               <img src={currentSong.thumbnails[0].url} alt={currentSong.title} className="w-10 h-10 rounded object-cover" />
@@ -550,7 +550,7 @@ const Results = () => {
                 ></div>
               </div>
             </div>
-            <button 
+            <button
               className="text-xs font-medium bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded transition-colors"
               onClick={() => setCurrentSong(null)}
             >

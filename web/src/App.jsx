@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { checkAuth } from './api';
-import Login from './components/Login';
-import Dashboard from './components/Dashboard';
-import Enrichment from './components/Enrichment';
-import Results from './components/Results';
-import Layout from './components/Layout';
+import Login from './features/auth/Login';
+import Dashboard from './features/enrichment/Dashboard';
+import Enrichment from './features/enrichment/Enrichment';
+import Results from './features/songs/Results';
+import Layout from './components/layout/Layout';
 
 const PrivateRoute = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(null);

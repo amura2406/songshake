@@ -1,6 +1,7 @@
 import typer
 from rich import print
-from song_shake import auth, playlist, enrichment
+from song_shake.features.auth import auth
+from song_shake.features.enrichment import enrichment, playlist
 from dotenv import load_dotenv, find_dotenv
 import os
 
@@ -31,7 +32,7 @@ def show(
     mood: str = typer.Option(None, "--mood", "-m", help="Filter by mood (case-insensitive)"),
 ):
     """Show enriched songs from the database."""
-    from song_shake import storage
+    from song_shake.features.songs import storage
     from rich.table import Table
     from rich.console import Console
     

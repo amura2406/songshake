@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { initGoogleAuth, pollGoogleAuth, login, getAuthConfig } from '../api';
-import { ShieldCheck, Music, AlertCircle, Loader2, ExternalLink, Copy, HelpCircle, Terminal } from 'lucide-react';
+import { initGoogleAuth, pollGoogleAuth, login, getAuthConfig } from '../../api';
+import { ShieldCheck, AlertCircle, Loader2, ExternalLink, Copy, HelpCircle, Terminal } from 'lucide-react';
+import logoImg from '../../assets/logo.png';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Login = () => {
@@ -105,9 +106,7 @@ const Login = () => {
         className="max-w-md w-full bg-surface-darker/80 rounded-2xl p-8 shadow-neon border border-primary/20 backdrop-blur-sm"
       >
         <div className="p-8 pb-0 text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-500/20">
-            <Music className="w-8 h-8 text-white" />
-          </div>
+          <img src={logoImg} alt="Song Shake" className="w-16 h-16 rounded-2xl mx-auto mb-4 shadow-lg shadow-purple-500/20" />
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-neutral-400">
             Song Shake
           </h1>
@@ -188,8 +187,8 @@ const Login = () => {
                     {useEnvAuth && <p className="text-xs text-neutral-500 text-center">Redirects to Google for authentication</p>}
                   </form>
                 ) : (
-                    <div className="mt-8 space-y-6">
-                      <div className="bg-surface-dark p-6 rounded-xl border border-white/5">
+                  <div className="mt-8 space-y-6">
+                    <div className="bg-surface-dark p-6 rounded-xl border border-white/5">
                       <p className="text-neutral-400 text-sm mb-4">Enter this code on the Google validation page:</p>
                       <div className="text-3xl font-mono font-bold tracking-[0.2em] text-purple-400 select-all cursor-pointer hover:text-purple-300 transition-colors" onClick={() => navigator.clipboard.writeText(authData.user_code)}>
                         {authData.user_code}
@@ -232,16 +231,16 @@ const Login = () => {
                 <textarea
                   value={headers}
                   onChange={(e) => setHeaders(e.target.value)}
-                    className="w-full bg-neutral-800/80 border border-neutral-700 rounded-lg p-4 text-xs font-mono text-neutral-300 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all h-32 resize-none leading-relaxed"
-                    placeholder='{"User-Agent": "...", "Cookie": "..."}'
-                    required
-                  />
+                  className="w-full bg-neutral-800/80 border border-neutral-700 rounded-lg p-4 text-xs font-mono text-neutral-300 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all h-32 resize-none leading-relaxed"
+                  placeholder='{"User-Agent": "...", "Cookie": "..."}'
+                  required
+                />
 
-                  <button
-                    onClick={handleManualLogin}
-                    disabled={loading}
-                    className="w-full bg-primary/20 hover:bg-primary text-primary hover:text-white font-semibold py-3 rounded-lg disabled:opacity-50 transition-all flex items-center justify-center gap-2 border border-primary/30 shadow-neon"
-                  >
+                <button
+                  onClick={handleManualLogin}
+                  disabled={loading}
+                  className="w-full bg-primary/20 hover:bg-primary text-primary hover:text-white font-semibold py-3 rounded-lg disabled:opacity-50 transition-all flex items-center justify-center gap-2 border border-primary/30 shadow-neon"
+                >
                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
                   Login with Headers
                 </button>

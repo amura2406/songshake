@@ -6,6 +6,9 @@ import os
 from ytmusicapi.auth.oauth import OAuthCredentials
 from dotenv import load_dotenv
 import requests
+from song_shake.platform.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 OAUTH_FILE = "oauth.json"
 def get_ytmusic() -> YTMusic:
@@ -45,7 +48,7 @@ def get_data_api_playlists(yt: YTMusic, limit: int = 50):
     token = auth_data.get('access_token')
     
     if not token:
-        print(f"DEBUG: No access token found in {OAUTH_FILE}")
+        logger.debug("no_access_token_found", file=OAUTH_FILE)
         raise ValueError("No access token found for Data API fallback")
         
     headers = {'Authorization': f"Bearer {token}"}
@@ -56,7 +59,7 @@ def get_data_api_playlists(yt: YTMusic, limit: int = 50):
         'maxResults': min(limit, 50)
     }
     
-    res = requests.get(api_url, headers=headers, params=params)
+    res = requests.get(api_url, headers=headers, params=params, timeout=10)
     res.raise_for_status()
     data = res.json()
     
@@ -112,7 +115,7 @@ def get_data_api_tracks(yt: YTMusic, playlist_id: str, limit: int = 500):
             'pageToken': page_token
         }
         
-        res = requests.get(api_url, headers=headers, params=params)
+        res = requests.get(api_url, headers=headers, params=params, timeout=10)
         res.raise_for_status()
         data = res.json()
         
@@ -186,7 +189,7 @@ def setup_auth():
         if data.strip().startswith("{") and "'" in data:
              try:
                  headers = ast.literal_eval(data)
-             except:
+             except (ValueError, SyntaxError):
                  pass
 
         # Final attempt: let YTMusic handle it

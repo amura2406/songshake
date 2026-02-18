@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
-import { getCurrentUser, logoutUser, getTags } from '../api';
+import { getCurrentUser, logoutUser, getTags } from '../../api';
+import logoImg from '../../assets/logo.png';
 
 const Layout = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -62,25 +63,23 @@ const Layout = ({ children }) => {
       {/* Top Navigation */}
       <nav className="h-16 border-b border-white/10 dark:bg-surface-darker/50 backdrop-blur-md flex items-center justify-between px-6 z-20 shrink-0">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center shadow-neon">
-            <span className="material-icons text-white">dns</span>
-          </div>
+          <img src={logoImg} alt="Song Shake" className="w-10 h-10 rounded-lg shadow-neon" />
           <h1 className="text-xl font-bold tracking-wide uppercase">
             Song<span className="text-primary">Shake</span>
           </h1>
         </div>
-        
+
         <div className="flex-1"></div>
-        
+
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={handleLogout}
             className="text-slate-400 hover:text-white transition-colors"
             title="Logout"
           >
             <span className="material-icons text-xl">logout</span>
           </button>
-          
+
           {user && (
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
               <div className="text-right hidden sm:block">
@@ -89,10 +88,10 @@ const Layout = ({ children }) => {
               </div>
               <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-primary to-blue-500 p-[2px]">
                 {user.thumbnail ? (
-                  <img 
-                    src={user.thumbnail} 
-                    alt={user.name} 
-                    className="h-full w-full rounded-full object-cover" 
+                  <img
+                    src={user.thumbnail}
+                    alt={user.name}
+                    className="h-full w-full rounded-full object-cover"
                   />
                 ) : (
                   <div className="h-full w-full rounded-full bg-surface-dark flex items-center justify-center">

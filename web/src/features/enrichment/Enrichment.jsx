@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getEnrichmentStreamUrl } from '../api';
+import { getEnrichmentStreamUrl } from '../../api';
 import { CheckCircle, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Enrichment = () => {
   const { playlistId: taskIdRaw } = useParams();
   const taskId = taskIdRaw;
-  
+
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
@@ -78,32 +78,32 @@ const Enrichment = () => {
 
   return (
     <div className="min-h-screen bg-background-dark text-white p-8 flex flex-col items-center justify-center">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="max-w-2xl w-full bg-surface-dark rounded-2xl p-8 border border-neutral-700 shadow-2xl"
       >
         <div className="flex items-center justify-between mb-8">
-           <h2 className="text-2xl font-bold">Enriching Playlist</h2>
-           {status.status === 'running' && <Loader2 className="animate-spin text-purple-400" />}
-           {status.status === 'completed' && <CheckCircle className="text-green-400" />}
-           {status.status === 'error' && <AlertCircle className="text-red-400" />}
+          <h2 className="text-2xl font-bold">Enriching Playlist</h2>
+          {status.status === 'running' && <Loader2 className="animate-spin text-purple-400" />}
+          {status.status === 'completed' && <CheckCircle className="text-green-400" />}
+          {status.status === 'error' && <AlertCircle className="text-red-400" />}
         </div>
-        
+
         <div className="mb-8">
           <div className="flex justify-between text-sm mb-2 text-slate-400">
             <span>Progress</span>
             <span>{status.current} / {status.total}</span>
           </div>
           <div className="h-4 bg-surface-darker rounded-full overflow-hidden">
-            <motion.div 
+            <motion.div
               className="h-full bg-gradient-to-r from-purple-500 to-pink-500"
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               transition={{ ease: "linear" }}
             />
           </div>
-          
+
           {status.tokens !== undefined && (
             <div className="mt-6 grid grid-cols-2 gap-4">
               <div className="bg-background-dark/50 rounded-xl p-4 border border-neutral-700 flex flex-col items-center justify-center relative overflow-hidden group">
@@ -134,15 +134,15 @@ const Enrichment = () => {
         </div>
 
         <div className="flex justify-end gap-4">
-          <button 
+          <button
             onClick={() => navigate('/')}
             className="px-6 py-2 text-slate-400 hover:text-white transition-colors"
           >
             Back to Dashboard
           </button>
-          
+
           {status.status === 'completed' && (
-            <button 
+            <button
               onClick={() => navigate('/results')}
               className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold shadow-lg shadow-purple-500/20"
             >

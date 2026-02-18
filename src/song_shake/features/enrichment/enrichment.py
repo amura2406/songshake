@@ -6,10 +6,13 @@ from rich.table import Table
 import yt_dlp
 from google import genai
 from google.genai import types
-from song_shake import playlist
+from song_shake.features.enrichment import playlist
 import shutil
 from dotenv import load_dotenv
 import time
+from song_shake.platform.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 console = Console()
 
@@ -131,8 +134,6 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
             console.print(f"  [dim]Usage: {p_tokens} in / {c_tokens} out (~${cost:.5f})[/dim]")
         
         try:
-             import json
-             import re
              data = json.loads(response.text)
              
              # Post-process genres to ensure consistency
@@ -152,10 +153,13 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
                  data['genres'] = list(set(normalized_genres)) # deduplicate
                  
              return data
-        except:
+        except json.JSONDecodeError as e:
+             logger.warning("gemini_json_parse_failed", error=str(e))
+             console.print(f"[dim]Warning: Failed to parse Gemini response as JSON: {e}[/dim]")
              return {"genres": [], "moods": [], "instruments": [], "bpm": None, "error": "JSON parse error"}
              
     except Exception as e:
+        logger.error("enrich_track_failed", title=title, artist=artist, error=str(e))
         console.print(f"[bold red]Error enriching:[/bold red] {e}")
         return {"genres": ["Error"], "moods": ["Error"], "instruments": [], "bpm": None, "error": str(e)}
 

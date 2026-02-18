@@ -1,6 +1,6 @@
 from rich.console import Console
 from rich.table import Table
-from song_shake.auth import get_ytmusic
+from song_shake.features.auth.auth import get_ytmusic
 
 console = Console()
 
@@ -32,7 +32,7 @@ def get_tracks(playlist_id: str):
         playlist = yt.get_playlist(playlist_id, limit=None)
         return playlist.get('tracks', [])
     except Exception as e:
-        from song_shake import auth
+        from song_shake.features.auth import auth
         try:
              # Fallback
              return auth.get_data_api_tracks(yt, playlist_id)
@@ -45,5 +45,5 @@ def get_playlist_title(playlist_id: str) -> str:
      try:
          playlist = yt.get_playlist(playlist_id, limit=1)
          return playlist['title']
-     except:
+     except Exception:
          return "Unknown Playlist"

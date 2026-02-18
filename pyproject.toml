@@ -8,6 +8,7 @@ dependencies = [
     "google-genai>=1.61.0",
     "python-dotenv>=1.2.1",
     "rich>=14.3.2",
+    "structlog>=24.0.0",
     "tinydb>=4.8.2",
     "typer>=0.21.1",
     "yt-dlp>=2026.1.31",
@@ -15,6 +16,13 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "python-multipart>=0.0.9",
+    "requests>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
 ]
 
 [project.scripts]
@@ -22,3 +30,8 @@ song-shake = "song_shake.main:app"
 
 [tool.uv]
 package = true
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
