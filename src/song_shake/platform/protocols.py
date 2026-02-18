@@ -11,6 +11,8 @@ from typing import Protocol
 class StoragePort(Protocol):
     """Abstract storage operations."""
 
+    def wipe_db(self) -> None: ...
+
     def save_track(self, track_data: dict) -> None: ...
 
     def get_all_tracks(self, owner: str) -> list[dict]: ...
@@ -35,10 +37,14 @@ class AudioDownloader(Protocol):
 
 
 class AudioEnricher(Protocol):
-    """Abstract AI enrichment operations."""
+    """Abstract AI enrichment operations.
+
+    Returns dict with genres, moods, instruments, bpm, and optionally
+    'usage_metadata': {'prompt_tokens': int, 'candidates_tokens': int}.
+    """
 
     def enrich(self, file_path: str, title: str, artist: str) -> dict:
-        """Enrich a track with AI-generated metadata. Returns dict with genres, moods, etc."""
+        """Enrich a track with AI-generated metadata."""
         ...
 
 

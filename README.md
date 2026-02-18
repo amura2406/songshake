@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.5.1)
+# Song Shake (v0.6.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
 
@@ -11,7 +11,7 @@ This tool takes your YouTube Music playlists and enriches them with **Genres** a
 -   **Web Interface (New!)**: Modern UI for managing enrinchment (Login, Dashboard, Progress, Results).
 -   **Background Job Support**: Identify running enrichment tasks on the dashboard and resume viewing real-time progress without double-processing.
 -   **CLI Tool**: Classic command-line interface for quick operations.
--   **Smart Enrichment**: Uses AI to analyze audio and determine genre/mood.
+-   **Smart Enrichment**: Uses AI to analyze audio and determine genre/mood. Core logic is fully testable via Protocol-based dependency injection.
 -   **Local Database**: Stores results in `songs.db` (TinyDB).
 -   **Seamless Auth**: Securely authenticate with your YouTube Music account.
 -   **Audio Download**: Automatically downloads tracks using `yt-dlp`.
@@ -148,9 +148,10 @@ graph TD
     
     subgraph "Song Shake Core"
         Core --> Auth[Auth Module]
-        Core --> Playlist[Playlist Fetcher]
-        Core --> Enrichment[AI Enrichment]
-        Core --> Storage[TinyDB Storage]
+        Core -->|via PlaylistFetcher| Playlist[Playlist Fetcher]
+        Core -->|via AudioEnricher| Enrichment[AI Enrichment]
+        Core -->|via AudioDownloader| Download[Audio Downloader]
+        Core -->|via StoragePort| Storage[TinyDB Storage]
     end
     
     Auth -->|OAuth2| Google[Google Identity]

@@ -6,11 +6,16 @@ from rich.table import Table
 import yt_dlp
 from google import genai
 from google.genai import types
-from song_shake.features.enrichment import playlist
 import shutil
 from dotenv import load_dotenv
 import time
 from song_shake.platform.logging_config import get_logger
+from song_shake.platform.protocols import (
+    AudioDownloader,
+    AudioEnricher,
+    PlaylistFetcher,
+    StoragePort,
+)
 
 logger = get_logger(__name__)
 
@@ -42,7 +47,14 @@ class TokenTracker:
         
         self.input_tokens += p_tokens
         self.output_tokens += c_tokens
-        
+
+    def add_usage_from_dict(self, usage_dict: dict) -> None:
+        """Update token counts from a plain dict (returned by AudioEnricher adapters)."""
+        if not usage_dict:
+            return
+        self.input_tokens += usage_dict.get("prompt_tokens", 0)
+        self.output_tokens += usage_dict.get("candidates_tokens", 0)
+
     def get_cost(self):
         input_cost = (self.input_tokens / 1_000_000) * PRICE_INPUT_AUDIO_PER_1M
         output_cost = (self.output_tokens / 1_000_000) * PRICE_OUTPUT_PER_1M
@@ -163,12 +175,49 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
         console.print(f"[bold red]Error enriching:[/bold red] {e}")
         return {"genres": ["Error"], "moods": ["Error"], "instruments": [], "bpm": None, "error": str(e)}
 
+
+def _build_track_data(
+    video_id: str,
+    title: str,
+    artists: str,
+    track: dict,
+    owner: str,
+    metadata: dict,
+) -> dict:
+    """Assemble a track_data dict from raw track info and enrichment metadata.
+
+    Pure function — no I/O, no side effects.
+    """
+    is_error = bool(metadata.get("error"))
+    return {
+        "videoId": video_id,
+        "title": title,
+        "artists": artists,
+        "album": track.get("album", {}).get("name") if track.get("album") else None,
+        "thumbnails": track.get("thumbnails", []),
+        "genres": metadata.get("genres", []),
+        "moods": metadata.get("moods", []),
+        "instruments": metadata.get("instruments", []),
+        "bpm": metadata.get("bpm"),
+        "status": "error" if is_error else "success",
+        "success": not is_error,
+        "error_message": metadata.get("error"),
+        "url": f"https://music.youtube.com/watch?v={video_id}",
+        "owner": owner,
+    }
+
+
 def process_playlist(
     playlist_id: str,
     owner: str = "local",
     wipe: bool = False,
     api_key: str | None = None,
     on_progress: callable = None,
+    # --- DI ports (None = construct production adapters) ---
+    storage_port: StoragePort | None = None,
+    playlist_fetcher: PlaylistFetcher | None = None,
+    audio_downloader: AudioDownloader | None = None,
+    audio_enricher: AudioEnricher | None = None,
 ) -> list[dict]:
     """Process a playlist: fetch tracks, deduplicate, download, enrich, and save.
 
@@ -179,15 +228,50 @@ def process_playlist(
         owner: Owner identifier for user_songs linking.
         wipe: If True, wipe the database before starting.
         api_key: Google/Gemini API key. If None, reads from env or prompts (CLI only).
+            Ignored when audio_enricher is provided.
         on_progress: Optional callback receiving a dict with keys:
             current (int), total (int), message (str),
             tokens (int), cost (float), track_data (dict | None).
+        storage_port: StoragePort implementation. None = TinyDB production adapter.
+        playlist_fetcher: PlaylistFetcher implementation. None = YTMusic production adapter.
+        audio_downloader: AudioDownloader implementation. None = yt-dlp production adapter.
+        audio_enricher: AudioEnricher implementation. None = Gemini production adapter.
 
     Returns:
         List of processed track_data dicts.
     """
-    from song_shake.features.songs import storage
     from datetime import datetime
+
+    # --- Construct default production adapters when None ---
+    if storage_port is None:
+        from song_shake.features.enrichment.storage_adapter import TinyDBStorageAdapter
+        storage_port = TinyDBStorageAdapter()
+
+    if playlist_fetcher is None:
+        from song_shake.features.enrichment.playlist_adapter import YTMusicPlaylistAdapter
+        playlist_fetcher = YTMusicPlaylistAdapter()
+
+    if audio_downloader is None:
+        from song_shake.features.enrichment.downloader_adapter import YtDlpDownloaderAdapter
+        audio_downloader = YtDlpDownloaderAdapter()
+
+    if audio_enricher is None:
+        # Resolve API key for production Gemini adapter
+        load_dotenv()
+        if not api_key:
+            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            from rich.prompt import Prompt
+            api_key = Prompt.ask("Enter Google API Key", password=True)
+            if not api_key:
+                console.print("[red]API Key required.[/red]")
+                return []
+        try:
+            from song_shake.features.enrichment.enricher_adapter import GeminiEnricherAdapter
+            audio_enricher = GeminiEnricherAdapter(api_key=api_key)
+        except Exception as e:
+            console.print(f"[red]Error initializing Gemini client: {e}[/red]")
+            return []
 
     def _report(current: int, total: int, message: str,
                 tracker: TokenTracker, track_data: dict | None = None):
@@ -207,37 +291,18 @@ def process_playlist(
 
     try:
         if wipe:
-            storage.wipe_db()
+            storage_port.wipe_db()
             console.print("[yellow]Database wiped.[/yellow]")
-
-        load_dotenv()
-
-        # Resolve API key
-        if not api_key:
-            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            from rich.prompt import Prompt
-            api_key = Prompt.ask("Enter Google API Key", password=True)
-            if not api_key:
-                console.print("[red]API Key required.[/red]")
-                return []
-
-        try:
-            client = genai.Client(api_key=api_key)
-        except Exception as e:
-            console.print(f"[red]Error initializing Gemini client: {e}[/red]")
-            return []
 
         # Fetch tracks
         console.print(f"Fetching tracks for playlist {playlist_id}...")
-        tracks = playlist.get_tracks(playlist_id)
+        tracks = playlist_fetcher.get_tracks(playlist_id)
         if not tracks:
             console.print("No tracks found or error fetching.")
             return []
 
         results: list[dict] = []
         tracker = TokenTracker()
-        db = storage.init_db()
         total = len(tracks)
 
         _report(0, total, "Fetching tracks...", tracker)
@@ -257,13 +322,13 @@ def process_playlist(
                 _report(i, total, f"Processing: {title} - {artists}", tracker)
 
                 # --- Deduplication: skip if already in global catalog ---
-                existing_track = storage.get_track_by_id(db, video_id)
+                existing_track = storage_port.get_track_by_id(video_id)
                 if existing_track:
                     progress.console.print(
                         f"[dim]Skipping (cached): {title} - {artists}[/dim]"
                     )
                     existing_track['owner'] = owner
-                    storage.save_track(db, existing_track)
+                    storage_port.save_track(existing_track)
                     progress.advance(task)
                     continue
 
@@ -271,8 +336,12 @@ def process_playlist(
 
                 # Download & enrich
                 try:
-                    filename = download_track(video_id)
-                    metadata = enrich_track(client, filename, title, artists, tracker)
+                    filename = audio_downloader.download(video_id, TEMP_DIR)
+                    metadata = audio_enricher.enrich(filename, title, artists)
+
+                    # Update tracker from enricher usage metadata
+                    usage_meta = metadata.pop("usage_metadata", None)
+                    tracker.add_usage_from_dict(usage_meta)
 
                     is_error = bool(metadata.get('error'))
                     if is_error:
@@ -284,47 +353,28 @@ def process_playlist(
                     if os.path.exists(filename):
                         os.remove(filename)
 
-                    track_data = {
-                        "videoId": video_id,
-                        "title": title,
-                        "artists": artists,
-                        "album": track.get('album', {}).get('name') if track.get('album') else None,
-                        "thumbnails": track.get('thumbnails', []),
-                        "genres": metadata.get('genres', []),
-                        "moods": metadata.get('moods', []),
-                        "instruments": metadata.get('instruments', []),
-                        "bpm": metadata.get('bpm'),
-                        "status": "error" if is_error else "success",
-                        "success": not is_error,
-                        "error_message": metadata.get('error'),
-                        "url": f"https://music.youtube.com/watch?v={video_id}",
-                        "owner": owner,
-                    }
+                    track_data = _build_track_data(
+                        video_id, title, artists, track, owner, metadata,
+                    )
 
-                    storage.save_track(db, track_data)
+                    storage_port.save_track(track_data)
                     results.append(track_data)
                     _report(i, total, f"Processed: {title}", tracker, track_data)
 
                 except Exception as e:
                     console.print(f"[red]Failed to process {title}: {e}[/red]")
                     tracker.failed += 1
-                    err_track_data = {
-                        "videoId": video_id,
-                        "title": title,
-                        "artists": artists,
-                        "album": track.get('album', {}).get('name') if track.get('album') else None,
-                        "thumbnails": track.get('thumbnails', []),
+                    err_metadata = {
                         "genres": [],
                         "moods": [],
                         "instruments": [],
                         "bpm": None,
-                        "status": "error",
-                        "success": False,
-                        "error_message": str(e),
-                        "url": f"https://music.youtube.com/watch?v={video_id}",
-                        "owner": owner,
+                        "error": str(e),
                     }
-                    storage.save_track(db, err_track_data)
+                    err_track_data = _build_track_data(
+                        video_id, title, artists, track, owner, err_metadata,
+                    )
+                    storage_port.save_track(err_track_data)
                     results.append(err_track_data)
                     _report(i, total, f"Error: {title}", tracker, err_track_data)
 
@@ -336,7 +386,7 @@ def process_playlist(
 
         # Save enrichment history
         try:
-            storage.save_enrichment_history(
+            storage_port.save_enrichment_history(
                 playlist_id,
                 owner,
                 {
@@ -344,7 +394,6 @@ def process_playlist(
                     'item_count': len(results),
                     'status': 'completed',
                 },
-                db,
             )
         except Exception as h_err:
             console.print(f"[dim]Warning: failed to save history: {h_err}[/dim]")
@@ -354,7 +403,7 @@ def process_playlist(
     except Exception as e:
         # Save error history
         try:
-            storage.save_enrichment_history(
+            storage_port.save_enrichment_history(
                 playlist_id,
                 owner,
                 {
