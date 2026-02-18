@@ -1,50 +1,176 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;800;900&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #af25f4;
-  --color-background-light: #f7f5f8;
-  --color-background-dark: #1c1022;
-  --color-surface-dark: #2a1b32;
-  --color-surface-darker: #150b1a;
-  --font-display: "Spline Sans", sans-serif;
-  --shadow-neon: 0 0 10px rgba(175, 37, 244, 0.5);
-  --shadow-neon-strong: 0 0 20px rgba(175, 37, 244, 0.7);
+    --color-primary: #af25f4;
+    --color-background-light: #f7f5f8;
+    --color-background-dark: #1c1022;
+    --color-surface-dark: #2a1b32;
+    --color-surface-darker: #150b1a;
+    --font-display: "Spline Sans", sans-serif;
+    --font-title: "Outfit", sans-serif;
+    --shadow-neon: 0 0 10px rgba(175, 37, 244, 0.5);
+    --shadow-neon-strong: 0 0 20px rgba(175, 37, 244, 0.7);
 }
 
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-    background: #1c1022; 
+    background: #1c1022;
 }
+
 ::-webkit-scrollbar-thumb {
-    background: #3f2e4a; 
+    background: #3f2e4a;
     border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-    background: #af25f4; 
+    background: #af25f4;
 }
+
+/* ── Animated title gradient ─────────────────────────────── */
+.title-gradient {
+    font-family: "Outfit", sans-serif;
+    background: linear-gradient(270deg,
+            #af25f4,
+            #e040fb,
+            #7c4dff,
+            #00e5ff,
+            #af25f4);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: phase-gradient 6s ease-in-out infinite;
+}
+
+@keyframes phase-gradient {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+/* ── Nebula background ───────────────────────────────────── */
+.nebula-bg {
+    position: relative;
+}
+
+.nebula-bg::before,
+.nebula-bg::after {
+    content: "";
+    position: fixed;
+    top: -25%;
+    left: -25%;
+    width: 150%;
+    height: 150%;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.nebula-bg::before {
+    background:
+        radial-gradient(ellipse 50% 40% at 30% 30%, rgba(175, 37, 244, 0.18), transparent 70%),
+        radial-gradient(ellipse 40% 50% at 70% 65%, rgba(0, 229, 255, 0.12), transparent 65%);
+    animation: nebula-a 30s ease-in-out infinite alternate;
+}
+
+.nebula-bg::after {
+    background:
+        radial-gradient(ellipse 45% 55% at 65% 25%, rgba(124, 77, 255, 0.14), transparent 65%),
+        radial-gradient(ellipse 55% 40% at 25% 75%, rgba(224, 64, 251, 0.12), transparent 60%);
+    animation: nebula-b 35s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes nebula-a {
+    0% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+
+    33% {
+        transform: translate(4%, -3%) rotate(1deg);
+    }
+
+    66% {
+        transform: translate(-3%, 5%) rotate(-1deg);
+    }
+
+    100% {
+        transform: translate(5%, 2%) rotate(0.5deg);
+    }
+}
+
+@keyframes nebula-b {
+    0% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+
+    25% {
+        transform: translate(-5%, 3%) rotate(-0.5deg);
+    }
+
+    50% {
+        transform: translate(3%, -4%) rotate(1deg);
+    }
+
+    75% {
+        transform: translate(-2%, -3%) rotate(-0.5deg);
+    }
+
+    100% {
+        transform: translate(4%, 5%) rotate(0.5deg);
+    }
+}
+
+/* ── Legacy utilities ────────────────────────────────────── */
 .text-gradient {
     background: linear-gradient(to right, #af25f4, #d946ef);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
+
 .eq-bar {
     width: 3px;
     background: #af25f4;
     animation: bounce 1s infinite ease-in-out;
 }
-.eq-bar:nth-child(2) { animation-delay: 0.1s; }
-.eq-bar:nth-child(3) { animation-delay: 0.2s; }
-.eq-bar:nth-child(4) { animation-delay: 0.3s; }
+
+.eq-bar:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.eq-bar:nth-child(3) {
+    animation-delay: 0.2s;
+}
+
+.eq-bar:nth-child(4) {
+    animation-delay: 0.3s;
+}
+
 @keyframes bounce {
-    0%, 100% { height: 4px; }
-    50% { height: 16px; }
+
+    0%,
+    100% {
+        height: 4px;
+    }
+
+    50% {
+        height: 16px;
+    }
 }
 
 @layer base {
-  body {
-    @apply bg-background-light dark:bg-background-dark font-display text-slate-800 dark:text-slate-200 antialiased;
-  }
+    body {
+        @apply bg-background-light dark:bg-background-dark font-display text-slate-800 dark:text-slate-200 antialiased;
+    }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getCurrentUser, logoutUser, getTags } from '../../api';
 import logoImg from '../../assets/logo.png';
@@ -8,6 +8,8 @@ const Layout = ({ children }) => {
   const [tags, setTags] = useState({ genres: [], moods: [], status: [] });
   const [showAllGenres, setShowAllGenres] = useState(false);
   const [showAllMoods, setShowAllMoods] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -30,7 +32,7 @@ const Layout = ({ children }) => {
 
           await fetchTags();
 
-          // Poll tags every 5 seconds to update the stats box dynamically
+          // Poll tags every 60s to update the stats box dynamically
           clearInterval(intervalId);
           intervalId = setInterval(fetchTags, 60000);
         }
@@ -42,7 +44,18 @@ const Layout = ({ children }) => {
     loadData();
 
     return () => clearInterval(intervalId);
-  }, [location.pathname]); // Reload tags if we navigate around
+  }, [location.pathname]);
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleLogout = async () => {
     await logoutUser();
@@ -59,34 +72,29 @@ const Layout = ({ children }) => {
   ];
 
   return (
-    <div className="bg-background-light dark:bg-background-dark font-display text-slate-800 dark:text-slate-200 antialiased overflow-hidden h-screen flex flex-col">
+    <div className="nebula-bg bg-background-light dark:bg-background-dark font-display text-slate-800 dark:text-slate-200 antialiased overflow-hidden h-screen flex flex-col">
       {/* Top Navigation */}
-      <nav className="h-16 border-b border-white/10 dark:bg-surface-darker/50 backdrop-blur-md flex items-center justify-between px-6 z-20 shrink-0">
+      <nav className="h-16 border-b border-white/10 dark:bg-surface-darker/50 backdrop-blur-md flex items-center justify-between px-6 z-20 shrink-0 relative">
         <div className="flex items-center gap-4">
           <img src={logoImg} alt="Song Shake" className="w-10 h-10 rounded-lg shadow-neon" />
-          <h1 className="text-xl font-bold tracking-wide uppercase">
-            Song<span className="text-primary">Shake</span>
+          <h1 className="title-gradient text-3xl font-black tracking-widest uppercase leading-none">
+            SONGSHAKE
           </h1>
         </div>
 
         <div className="flex-1"></div>
 
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleLogout}
-            className="text-slate-400 hover:text-white transition-colors"
-            title="Logout"
-          >
-            <span className="material-icons text-xl">logout</span>
-          </button>
-
-          {user && (
-            <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-white">{user.name}</p>
-                <p className="text-xs text-primary truncate max-w-[100px]">{user.email || 'User'}</p>
-              </div>
-              <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-primary to-blue-500 p-[2px]">
+        {/* Profile dropdown */}
+        {user && (
+          <div className="relative" ref={profileRef}>
+            <button
+              onClick={() => setProfileOpen(prev => !prev)}
+              className="flex items-center gap-2 rounded-full p-[2px] bg-gradient-to-tr from-primary to-blue-500 hover:shadow-neon transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background-dark"
+              aria-expanded={profileOpen}
+              aria-haspopup="true"
+              aria-label="User menu"
+            >
+              <div className="h-9 w-9 rounded-full overflow-hidden">
                 {user.thumbnail ? (
                   <img
                     src={user.thumbnail}
@@ -99,9 +107,34 @@ const Layout = ({ children }) => {
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
+            </button>
+
+            {profileOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full mt-2 w-56 rounded-xl bg-surface-dark/95 backdrop-blur-xl border border-white/10 shadow-2xl py-3 z-50 animate-in"
+                style={{ animation: 'fadeSlideIn 0.15s ease-out' }}
+              >
+                <div className="px-4 pb-3 border-b border-white/10">
+                  <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+                  {user.email && (
+                    <p className="text-xs text-slate-400 truncate mt-0.5">{user.email}</p>
+                  )}
+                </div>
+                <div className="pt-2 px-2">
+                  <button
+                    onClick={handleLogout}
+                    role="menuitem"
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <span className="material-icons text-lg">logout</span>
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       <div className="flex flex-1 overflow-hidden relative">
