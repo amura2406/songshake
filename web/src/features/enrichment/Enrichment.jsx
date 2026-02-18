@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getEnrichmentStreamUrl } from '../../api';
 import { CheckCircle, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
+// eslint-disable-next-line no-unused-vars
+import { motion } from 'framer-motion';
 
 
 const Enrichment = () => {

@@ -56,7 +56,8 @@ const Results = () => {
   useEffect(() => {
     loadData();
     loadTags();
-  }, [page, queryTags, queryBpm.min, queryBpm.max, loadData, loadTags]); // Reload when page or tags query change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, queryTags, queryBpm.min, queryBpm.max]); // Reload when page or tags query change
 
   useEffect(() => {
     let interval;

@@ -35,11 +35,11 @@
 .title-gradient {
     font-family: "Outfit", sans-serif;
     background: linear-gradient(270deg,
-            #af25f4,
-            #e040fb,
-            #7c4dff,
-            #00e5ff,
-            #af25f4);
+            rgba(135, 14, 129, 1),
+            rgba(27, 126, 179, 1),
+            rgba(234, 243, 233, 1),
+            rgba(159, 199, 155, 1),
+            rgba(135, 14, 129, 1));
     background-size: 300% 100%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;

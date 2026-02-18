@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getPlaylists, startEnrichment, getCurrentUser } from '../../api';
 import { Play, Activity, ListMusic } from 'lucide-react';
@@ -30,6 +30,12 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
+  const playlistsRef = useRef(playlists);
+
+  // Keep ref in sync with state so the poll closure always reads the latest value
+  useEffect(() => {
+    playlistsRef.current = playlists;
+  }, [playlists]);
 
   const loadData = useCallback(async (showLoading = true) => {
     try {
@@ -51,14 +57,14 @@ const Dashboard = () => {
     let timeoutId;
     const poll = async () => {
       await loadData(false);
-      const hasRunning = playlists.some(p => p.is_running);
+      const hasRunning = playlistsRef.current.some(p => p.is_running);
       timeoutId = setTimeout(poll, hasRunning ? POLL_INTERVAL_ACTIVE : POLL_INTERVAL_IDLE);
     };
 
     // Start polling after initial load
     timeoutId = setTimeout(poll, POLL_INTERVAL_IDLE);
     return () => clearTimeout(timeoutId);
-  }, [loadData, playlists]);
+  }, [loadData]);
 
   const handleStartEnrichment = async (playlist) => {
     try {
