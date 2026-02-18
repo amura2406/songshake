@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getSongs, getCurrentUser, getTags } from '../../api';
 import { Play, Pause, FastForward, Rewind, Volume2 } from 'lucide-react';
 import YouTube from 'react-youtube';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Results = () => {
@@ -55,7 +56,7 @@ const Results = () => {
   useEffect(() => {
     loadData();
     loadTags();
-  }, [page, queryTags, queryBpm.min, queryBpm.max]); // Reload when page or tags query change
+  }, [page, queryTags, queryBpm.min, queryBpm.max, loadData, loadTags]); // Reload when page or tags query change
 
   useEffect(() => {
     let interval;
@@ -71,9 +72,9 @@ const Results = () => {
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [playerContext, isPlaying]);
+  }, [playerContext, isPlaying, duration]);
 
-  const loadTags = async () => {
+  const loadTags = useCallback(async () => {
     try {
       const u = await getCurrentUser();
       if (u) {
@@ -91,9 +92,9 @@ const Results = () => {
     } catch (error) {
       console.error("Failed to fetch available filter tags", error);
     }
-  };
+  }, [queryTags]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const u = await getCurrentUser();
@@ -110,7 +111,7 @@ const Results = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [queryTags, page, limit, queryBpm.min, queryBpm.max]);
 
   const toggleTag = (tagValue) => {
     let newTags;
@@ -141,13 +142,7 @@ const Results = () => {
     navigate(`/results?${params.toString()}`);
   };
 
-  const formatDuration = (ms) => {
-    if (!ms) return '--:--';
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
+
 
   const handlePlayerReady = (event) => {
     setPlayerContext(event.target);

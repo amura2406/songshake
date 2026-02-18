@@ -186,7 +186,7 @@ def process_playlist(
     Returns:
         List of processed track_data dicts.
     """
-    from song_shake import storage
+    from song_shake.features.songs import storage
     from datetime import datetime
 
     def _report(current: int, total: int, message: str,

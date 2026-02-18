@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { getCurrentUser, logoutUser, getTags } from '../../api';
 import logoImg from '../../assets/logo.png';
 
@@ -32,7 +32,7 @@ const Layout = ({ children }) => {
 
           // Poll tags every 5 seconds to update the stats box dynamically
           clearInterval(intervalId);
-          intervalId = setInterval(fetchTags, 5000);
+          intervalId = setInterval(fetchTags, 60000);
         }
       } catch (error) {
         console.error("Failed to load user or tags", error);

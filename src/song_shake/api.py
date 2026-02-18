@@ -8,13 +8,16 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from dotenv import load_dotenv
 from song_shake.platform.logging_config import configure_logging
+
+load_dotenv()
+configure_logging()
+
 from song_shake.features.auth.routes import router as auth_router
 from song_shake.features.songs.routes_playlists import router as playlists_router
 from song_shake.features.enrichment.routes import router as enrichment_router
 from song_shake.features.songs.routes import router as songs_router
-
-configure_logging()
 
 app = FastAPI(title="Song Shake API")
 

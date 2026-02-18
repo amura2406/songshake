@@ -1,8 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getPlaylists, startEnrichment, getEnrichmentStatus, getEnrichmentStreamUrl, getCurrentUser, logoutUser } from '../../api';
-import { Play, Activity, ListMusic, LogOut, Search, User } from 'lucide-react';
+import { getPlaylists, startEnrichment, getCurrentUser } from '../../api';
+import { Play, Activity, ListMusic } from 'lucide-react';
+// eslint-disable-next-line no-unused-vars
 import { motion } from 'framer-motion';
+
+const POLL_INTERVAL_ACTIVE = 10_000;  // 10s when something is processing
+const POLL_INTERVAL_IDLE = 30_000;    // 30s when idle
 
 const getTimeAgo = (dateString) => {
   const now = new Date();
@@ -24,21 +28,10 @@ const getTimeAgo = (dateString) => {
 const Dashboard = () => {
   const [playlists, setPlaylists] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(null);
-  const [logs, setLogs] = useState([]);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
-  const logContainerRef = useRef(null);
 
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(() => {
-      loadData(false); // background poll
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadData = async (showLoading = true) => {
+  const loadData = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
       const [pl, u] = await Promise.all([getPlaylists(), getCurrentUser()]);
@@ -49,12 +42,23 @@ const Dashboard = () => {
     } finally {
       if (showLoading) setLoading(false);
     }
-  };
+  }, []);
 
-  const handleLogout = async () => {
-    await logoutUser();
-    window.location.href = '/';
-  };
+  useEffect(() => {
+    loadData();
+
+    // Adaptive polling: faster when enrichment is running, slower when idle
+    let timeoutId;
+    const poll = async () => {
+      await loadData(false);
+      const hasRunning = playlists.some(p => p.is_running);
+      timeoutId = setTimeout(poll, hasRunning ? POLL_INTERVAL_ACTIVE : POLL_INTERVAL_IDLE);
+    };
+
+    // Start polling after initial load
+    timeoutId = setTimeout(poll, POLL_INTERVAL_IDLE);
+    return () => clearTimeout(timeoutId);
+  }, [loadData, playlists]);
 
   const handleStartEnrichment = async (playlist) => {
     try {
@@ -64,7 +68,6 @@ const Dashboard = () => {
       }
 
       const ownerId = user ? user.id : 'web_user';
-      console.log("Starting enrichment for owner:", ownerId);
       const taskId = await startEnrichment(playlist.playlistId, ownerId);
       navigate(`/enrichment/${taskId}`);
     } catch (error) {

@@ -5,7 +5,7 @@ import json
 import os
 from typing import Any, Dict, Optional
 
-from dotenv import load_dotenv
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -90,7 +90,7 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
 
 @router.post("")
 def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTasks):
-    load_dotenv()
+
     api_key = (
         request.api_key
         or os.getenv("GOOGLE_API_KEY")

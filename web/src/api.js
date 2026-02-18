@@ -9,10 +9,8 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Redirect to login or dispatch cleanup
-      // Check if we are already on login page to avoid loops
       if (!window.location.pathname.includes('/login')) {
-         window.location.href = '/login';
+        window.location.href = '/login';
       }
     }
     return Promise.reject(error);
@@ -23,7 +21,7 @@ export const checkAuth = async () => {
   try {
     const res = await api.get('/auth/status');
     return res.data.authenticated;
-  } catch (error) {
+  } catch {
     return false;
   }
 };
@@ -32,7 +30,7 @@ export const getCurrentUser = async () => {
   try {
     const res = await api.get('/auth/me');
     return res.data;
-  } catch (error) {
+  } catch {
     return null;
   }
 };
@@ -61,36 +59,27 @@ export const getAuthConfig = async () => {
 };
 
 export const initGoogleAuth = async (clientId = null, clientSecret = null) => {
-  const response = await fetch('/auth/google/init', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+  const res = await api.post('/auth/google/init', {
+    client_id: clientId,
+    client_secret: clientSecret,
   });
-  if (!response.ok) throw new Error('Failed to init auth');
-  return response.json();
+  return res.data;
 };
 
 export const pollGoogleAuth = async (deviceCode, clientId = null, clientSecret = null) => {
-  const response = await fetch('/auth/google/poll', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ device_code: deviceCode, client_id: clientId, client_secret: clientSecret }),
+  const res = await api.post('/auth/google/poll', {
+    device_code: deviceCode,
+    client_id: clientId,
+    client_secret: clientSecret,
   });
-  // If 400, might be pending or error. But our API returns 200 with {status: pending} or throws 400 for real error?
-  // Let's check api.py again. It catches exceptions.
-  // If "pending", it returns {status: "pending"}.
-  if (!response.ok) {
-    const err = await response.json();
-    throw new Error(err.detail || 'Failed to poll auth');
-  }
-  return response.json();
+  return res.data;
 };
 
 export const getEnrichmentStatus = async (taskId) => {
-  const response = await fetch(`/api/enrichment/status/${taskId}`);
-  if (!response.ok) throw new Error('Failed to get status');
-  return response.json();
+  const res = await api.get(`/api/enrichment/status/${taskId}`);
+  return res.data;
 };
+
 // Helper to get stream URL
 export const getEnrichmentStreamUrl = (taskId) => `/api/enrichment/stream/${taskId}`;
 

@@ -10,6 +10,30 @@ load_dotenv(find_dotenv(usecwd=True))
 
 app = typer.Typer()
 
+
+def filter_tracks(
+    tracks: list[dict],
+    genre: str | None = None,
+    mood: str | None = None,
+) -> list[dict]:
+    """Filter tracks by genre and/or mood (case-insensitive substring match).
+
+    Pure function — no I/O, no side effects.
+    """
+    result = []
+    for t in tracks:
+        if genre:
+            t_genres = [g.lower() for g in t.get("genres", [])]
+            if not any(genre.lower() in g for g in t_genres):
+                continue
+        if mood:
+            t_moods = [m.lower() for m in t.get("moods", [])]
+            if not any(mood.lower() in m for m in t_moods):
+                continue
+        result.append(t)
+    return result
+
+
 @app.command()
 def setup_auth():
     """Setup YouTube Music authentication."""
@@ -35,34 +59,17 @@ def show(
     from song_shake.features.songs import storage
     from rich.table import Table
     from rich.console import Console
-    
+
     console = Console()
     tracks = storage.get_all_tracks()
-    
+
     if not tracks:
         console.print("[yellow]No songs in database.[/yellow]")
         return
-        
-    # Filtering
-    filtered_tracks = []
-    for t in tracks:
-        # Genre filter
-        if genre:
-            t_genres = [g.lower() for g in t.get('genres', [])]
-            if not any(genre.lower() in g for g in t_genres):
-                continue
-        
-        # Mood filter
-        if mood:
-            t_moods = [m.lower() for m in t.get('moods', [])]
-            if not any(mood.lower() in m for m in t_moods):
-                continue
-                
-        filtered_tracks.append(t)
-    
-    # Limiting
+
+    filtered_tracks = filter_tracks(tracks, genre=genre, mood=mood)
     display_tracks = filtered_tracks[:limit]
-    
+
     table = Table(title=f"Enriched Songs ({len(display_tracks)}/{len(filtered_tracks)} shown)")
     table.add_column("No", style="dim")
     table.add_column("Title", style="cyan")
@@ -72,24 +79,24 @@ def show(
     table.add_column("Instruments", style="blue")
     table.add_column("BPM", style="dim")
     table.add_column("Status", style="blue")
-    
+
     for idx, track in enumerate(display_tracks, 1):
-        genres = ", ".join(track.get('genres', []))
-        moods = ", ".join(track.get('moods', []))
-        instruments = ", ".join(track.get('instruments', []))
-        bpm = str(track.get('bpm', '')) if track.get('bpm') else ''
-        
+        genres = ", ".join(track.get("genres", []))
+        moods = ", ".join(track.get("moods", []))
+        instruments = ", ".join(track.get("instruments", []))
+        bpm = str(track.get("bpm", "")) if track.get("bpm") else ""
+
         table.add_row(
             str(idx),
-            track.get('title', 'Unknown'),
-            track.get('artists', 'Unknown'),
+            track.get("title", "Unknown"),
+            track.get("artists", "Unknown"),
             genres,
             moods,
             instruments,
             bpm,
-            track.get('status', 'Unknown')
+            track.get("status", "Unknown"),
         )
-        
+
     console.print(table)
     if len(display_tracks) < len(filtered_tracks):
         console.print(f"[dim]... and {len(filtered_tracks) - len(display_tracks)} more. Use --limit to see more.[/dim]")

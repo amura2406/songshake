@@ -33,9 +33,7 @@ class PlaylistResponse(BaseModel):
 
 @router.get("/playlists", response_model=List[PlaylistResponse])
 def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
-    # Import here to access shared state — will be replaced with storage in Group 4
-    from song_shake.features.enrichment.routes import enrichment_tasks
-
+    logger.info("get_playlists_started")
     try:
         playlists = []
         try:
@@ -70,19 +68,21 @@ def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
             }
             playlists.insert(0, liked_music)
 
-        # Merge with history and active tasks
+        # Merge with history and active tasks (from persistent storage)
         try:
             history = storage.get_all_history()
             logger.debug("enrichment_history_keys", keys=list(history.keys()))
 
-            # Map of active playlists: playlist_id -> task_id
-            active_playlists = {}
-            for tid, tdata in enrichment_tasks.items():
-                if tdata.get("status") in ["pending", "running"]:
-                    components = tid.rsplit("_", 1)
-                    if len(components) == 2:
-                        pid = components[0]
-                        active_playlists[pid] = tid
+            # Use persisted task state instead of importing in-memory dict
+            active_tasks = storage.get_all_active_tasks()
+
+            # Map active tasks to playlists by extracting playlist_id from task_id
+            active_playlists: Dict[str, str] = {}
+            for tid in active_tasks:
+                components = tid.rsplit("_", 1)
+                if len(components) == 2:
+                    pid = components[0]
+                    active_playlists[pid] = tid
 
             for p in playlists:
                 pid = p.get("playlistId")
@@ -105,7 +105,8 @@ def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
         except Exception as e:
             logger.error("merge_history_failed", error=str(e))
 
+        logger.info("get_playlists_success", count=len(playlists))
         return playlists
     except Exception as e:
         logger.error("get_playlists_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch playlists")

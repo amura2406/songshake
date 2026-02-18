@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getEnrichmentStreamUrl } from '../../api';
 import { CheckCircle, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
-import { motion } from 'framer-motion';
+
 
 const Enrichment = () => {
   const { playlistId: taskIdRaw } = useParams();

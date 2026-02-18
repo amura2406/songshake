@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { initGoogleAuth, pollGoogleAuth, login, getAuthConfig } from '../../api';
 import { ShieldCheck, AlertCircle, Loader2, ExternalLink, Copy, HelpCircle, Terminal } from 'lucide-react';
 import logoImg from '../../assets/logo.png';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Login = () => {
@@ -67,7 +68,7 @@ const Login = () => {
     try {
       await login(headers);
       navigate('/');
-    } catch (err) {
+    } catch {
       setError('Invalid headers. Please check format and try again.');
     } finally {
       setLoading(false);
@@ -84,9 +85,9 @@ const Login = () => {
             clearInterval(interval);
             navigate('/');
           }
-        } catch (err) {
-          console.error("Polling error", err);
-          if (err.message && (err.message.includes('expired') || err.message.includes('invalid_grant'))) {
+        } catch (pollErr) {
+          console.error("Polling error", pollErr);
+          if (pollErr.message && (pollErr.message.includes('expired') || pollErr.message.includes('invalid_grant'))) {
             setError('Session expired. Please try again.');
             setPolling(false);
             clearInterval(interval);

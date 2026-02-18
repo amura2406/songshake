@@ -5,7 +5,6 @@ import os
 import time
 
 import requests
-from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -48,21 +47,40 @@ def get_ytmusic() -> YTMusic:
     """Get an authenticated YTMusic instance or raise 401."""
     try:
         return auth.get_ytmusic()
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+
+def _is_token_valid() -> bool:
+    """Check if oauth.json exists and the token is not expired."""
+    if not os.path.exists(OAUTH_FILE):
+        return False
+    try:
+        with open(OAUTH_FILE) as f:
+            tokens = json.load(f)
+        expires_at = tokens.get("expires_at")
+        if expires_at and time.time() > expires_at:
+            return False
+        # Must have at least an access_token or refresh_token
+        return bool(tokens.get("access_token") or tokens.get("refresh_token"))
+    except (json.JSONDecodeError, OSError):
+        return False
 
 
 # --- Routes ---
 
 @router.get("/logout")
 def logout():
+    logger.info("logout_started")
     if os.path.exists(OAUTH_FILE):
         os.remove(OAUTH_FILE)
+    logger.info("logout_success")
     return {"status": "logged_out"}
 
 
 @router.get("/me")
 def get_current_user():
+    logger.info("get_current_user_started")
     if not os.path.exists(OAUTH_FILE):
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -95,6 +113,7 @@ def get_current_user():
                 snippet = item["snippet"]
                 name = snippet.get("title", "YouTube User")
                 thumb = snippet["thumbnails"]["default"]["url"]
+                logger.info("get_current_user_success", user_id=user_id)
                 return {
                     "id": user_id,
                     "name": name,
@@ -114,16 +133,18 @@ def get_current_user():
                 user_id = uinfo.get("id") or uinfo.get("email") or "web_user"
                 name = uinfo.get("name") or uinfo.get("email") or "User"
                 thumb = uinfo.get("picture")
+                logger.info("get_current_user_success", user_id=user_id, source="userinfo")
                 return {
                     "id": user_id,
                     "name": name,
                     "thumbnail": thumb,
                     "authenticated": True,
                 }
-        except Exception:
-            pass  # userinfo endpoint may not be available with current scopes
+        except requests.RequestException as e:
+            logger.warning("userinfo_endpoint_failed", error=str(e))
 
         # 3. Fallback
+        logger.info("get_current_user_success", user_id="web_user", source="fallback")
         return {
             "id": "web_user",
             "name": "Authenticated User (No Channel)",
@@ -141,13 +162,13 @@ def get_current_user():
 
 @router.get("/status")
 def auth_status():
-    if os.path.exists(OAUTH_FILE):
-        return {"authenticated": True}
-    return {"authenticated": False}
+    authenticated = _is_token_valid()
+    return {"authenticated": authenticated}
 
 
 @router.post("/login")
 def login(request: LoginRequest):
+    logger.info("login_started", method="headers")
     if not request.headers_raw:
         raise HTTPException(status_code=400, detail="Headers required")
 
@@ -166,28 +187,29 @@ def login(request: LoginRequest):
             setup(filepath=OAUTH_FILE, headers_raw=request.headers_raw)
 
         YTMusic(OAUTH_FILE)
+        logger.info("login_success", method="headers")
         return {"status": "success"}
     except Exception as e:
         if os.path.exists(OAUTH_FILE):
             os.remove(OAUTH_FILE)
-        raise HTTPException(status_code=400, detail=f"Invalid headers: {str(e)}")
+        logger.warning("login_failed", method="headers", error=str(e))
+        raise HTTPException(status_code=400, detail="Invalid headers format")
 
 
 @router.get("/config")
 def auth_config():
-    load_dotenv()
     has_env = bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET"))
     return {"use_env": has_env}
 
 
 @router.get("/google/login")
 def google_auth_login():
-    load_dotenv()
+    logger.info("google_auth_login_started")
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     if not client_id:
         raise HTTPException(status_code=400, detail="GOOGLE_CLIENT_ID not set in .env")
 
-    redirect_uri = "http://localhost:8000/auth/google/callback"
+    redirect_uri = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
     scope = "https://www.googleapis.com/auth/youtube"
 
     params = {
@@ -204,10 +226,11 @@ def google_auth_login():
 
 @router.get("/google/callback")
 def google_auth_callback(code: str):
-    load_dotenv()
+    logger.info("google_auth_callback_started")
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-    redirect_uri = "http://localhost:8000/auth/google/callback"
+    redirect_uri = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/")
 
     if not client_id or not client_secret:
         raise HTTPException(status_code=400, detail="Credentials not set in .env")
@@ -231,15 +254,17 @@ def google_auth_callback(code: str):
         with open(OAUTH_FILE, "w") as f:
             json.dump(tokens, f)
 
-        return RedirectResponse("http://localhost:5173/")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Token exchange failed: {e}")
+        logger.info("google_auth_callback_success")
+        return RedirectResponse(frontend_url)
+    except requests.RequestException as e:
+        logger.error("google_auth_callback_failed", error=str(e))
+        raise HTTPException(status_code=400, detail="Token exchange failed")
 
 
 @router.post("/google/init")
 def google_auth_init(request: OAuthInitRequest):
+    logger.info("google_auth_init_started")
     try:
-        load_dotenv()
         client_id = request.client_id or os.getenv("GOOGLE_CLIENT_ID")
         client_secret = request.client_secret or os.getenv("GOOGLE_CLIENT_SECRET")
 
@@ -251,17 +276,19 @@ def google_auth_init(request: OAuthInitRequest):
 
         creds = OAuthCredentials(client_id=client_id, client_secret=client_secret)
         code = creds.get_code()
+        logger.info("google_auth_init_success")
         return code
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("google_auth_init_failed", error=str(e))
+        raise HTTPException(status_code=400, detail="Failed to initiate OAuth flow")
 
 
 @router.post("/google/poll")
 def google_auth_poll(request: OAuthPollRequest):
+    logger.info("google_auth_poll_started")
     try:
-        load_dotenv()
         client_id = request.client_id or os.getenv("GOOGLE_CLIENT_ID")
         client_secret = request.client_secret or os.getenv("GOOGLE_CLIENT_SECRET")
 
@@ -281,10 +308,12 @@ def google_auth_poll(request: OAuthPollRequest):
         with open(OAUTH_FILE, "w") as f:
             f.write(ref_token.as_json())
 
+        logger.info("google_auth_poll_success")
         return {"status": "success"}
 
     except Exception as e:
         err_str = str(e).lower()
         if "authorization_pending" in err_str or "precondition_required" in err_str:
             return {"status": "pending"}
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("google_auth_poll_failed", error=str(e))
+        raise HTTPException(status_code=400, detail="OAuth polling failed")
