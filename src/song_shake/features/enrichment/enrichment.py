@@ -12,9 +12,11 @@ from dotenv import load_dotenv
 import time
 from song_shake.platform.logging_config import get_logger
 from song_shake.platform.protocols import (
+    AlbumFetcher,
     AudioDownloader,
     AudioEnricher,
     PlaylistFetcher,
+    SongFetcher,
     StoragePort,
 )
 
@@ -180,28 +182,60 @@ def enrich_track(client: genai.Client, file_path: str, title: str, artist: str, 
 def _build_track_data(
     video_id: str,
     title: str,
-    artists: str,
     track: dict,
     owner: str,
     metadata: dict,
+    *,
+    is_music: bool = True,
+    album_year: str | None = None,
+    play_count: str | None = None,
 ) -> dict:
     """Assemble a track_data dict from raw track info and enrichment metadata.
 
     Pure function — no I/O, no side effects.
     """
     is_error = bool(metadata.get("error"))
+
+    # Structured artists: [{"name": "...", "id": "..."}]
+    raw_artists = track.get("artists", [])
+    artists = [
+        {
+            "name": a.get("name", "Unknown").removesuffix(" - Topic").strip(),
+            "id": a.get("id"),
+        }
+        for a in raw_artists
+    ]
+
+    # Structured album: {"name": "...", "id": "..."}
+    raw_album = track.get("album")
+    album = (
+        {"name": raw_album["name"], "id": raw_album.get("id")}
+        if raw_album and raw_album.get("name")
+        else None
+    )
+
+    if not is_music:
+        status = "non-music"
+    elif is_error:
+        status = "error"
+    else:
+        status = "success"
+
     return {
         "videoId": video_id,
         "title": title,
         "artists": artists,
-        "album": track.get("album", {}).get("name") if track.get("album") else None,
+        "album": album,
+        "year": album_year,
+        "playCount": play_count,
         "thumbnails": track.get("thumbnails", []),
         "genres": metadata.get("genres", []),
         "moods": metadata.get("moods", []),
         "instruments": metadata.get("instruments", []),
         "bpm": metadata.get("bpm"),
-        "status": "error" if is_error else "success",
-        "success": not is_error,
+        "isMusic": is_music,
+        "status": status,
+        "success": is_music and not is_error,
         "error_message": metadata.get("error"),
         "url": f"https://music.youtube.com/watch?v={video_id}",
         "owner": owner,
@@ -220,6 +254,8 @@ def process_playlist(
     playlist_fetcher: PlaylistFetcher | None = None,
     audio_downloader: AudioDownloader | None = None,
     audio_enricher: AudioEnricher | None = None,
+    song_fetcher: SongFetcher | None = None,
+    album_fetcher: AlbumFetcher | None = None,
 ) -> list[dict]:
     """Process a playlist: fetch tracks, deduplicate, download, enrich, and save.
 
@@ -240,6 +276,8 @@ def process_playlist(
         playlist_fetcher: PlaylistFetcher implementation. None = YTMusic production adapter.
         audio_downloader: AudioDownloader implementation. None = yt-dlp production adapter.
         audio_enricher: AudioEnricher implementation. None = Gemini production adapter.
+        song_fetcher: SongFetcher implementation. None = YTMusic production adapter.
+        album_fetcher: AlbumFetcher implementation. None = YTMusic production adapter.
 
     Returns:
         List of processed track_data dicts.
@@ -259,6 +297,14 @@ def process_playlist(
         from song_shake.features.enrichment.downloader_adapter import YtDlpDownloaderAdapter
         audio_downloader = YtDlpDownloaderAdapter()
 
+    if song_fetcher is None:
+        from song_shake.features.enrichment.song_adapter import YTMusicSongAdapter
+        song_fetcher = YTMusicSongAdapter()
+
+    if album_fetcher is None:
+        from song_shake.features.enrichment.album_adapter import YTMusicAlbumAdapter
+        album_fetcher = YTMusicAlbumAdapter()
+
     if audio_enricher is None:
         # Resolve API key for production Gemini adapter
         load_dotenv()
@@ -276,6 +322,19 @@ def process_playlist(
         except Exception as e:
             console.print(f"[red]Error initializing Gemini client: {e}[/red]")
             return []
+
+    # Cache album metadata to avoid repeated get_album calls for same album
+    album_cache: dict[str, dict] = {}
+
+    def _fetch_album_year(album_browse_id: str | None) -> str | None:
+        """Fetch album year from cache or via album_fetcher."""
+        if not album_browse_id:
+            return None
+        if album_browse_id in album_cache:
+            return album_cache[album_browse_id].get("year")
+        album_meta = album_fetcher.get_album(album_browse_id)
+        album_cache[album_browse_id] = album_meta
+        return album_meta.get("year")
 
     def _report(current: int, total: int, message: str,
                 tracker: TokenTracker, track_data: dict | None = None):
@@ -320,13 +379,15 @@ def process_playlist(
 
                 video_id = track.get('videoId')
                 title = track.get('title', 'Unknown')
-                artists = ", ".join([a['name'] for a in track.get('artists', [])])
+                artists_display = ", ".join(
+                    a['name'] for a in track.get('artists', [])
+                )
 
                 if not video_id:
                     progress.advance(task)
                     continue
 
-                _report(i, total, f"Processing: {title} - {artists}", tracker)
+                _report(i, total, f"Processing: {title} - {artists_display}", tracker)
 
                 # --- Deduplication: skip if already in global catalog ---
                 # When wipe=True (Fresh Scan), re-process every track
@@ -334,19 +395,66 @@ def process_playlist(
                     existing_track = storage_port.get_track_by_id(video_id)
                     if existing_track:
                         progress.console.print(
-                            f"[dim]Skipping (cached): {title} - {artists}[/dim]"
+                            f"[dim]Skipping (cached): {title} - {artists_display}[/dim]"
                         )
                         existing_track['owner'] = owner
                         storage_port.save_track(existing_track)
                         progress.advance(task)
                         continue
 
-                progress.console.print(f"Processing: {title} - {artists}")
+                # --- Enrich track with per-song ytmusicapi metadata ---
+                song_info = song_fetcher.get_song(video_id)
+                is_music = song_info.get("isMusic", True)
 
-                # Download & enrich
+                # Replace track artists/album with richer ytmusicapi data
+                rich_artists = song_info.get("artists", [])
+                if rich_artists:
+                    track["artists"] = rich_artists
+                    artists_display = ", ".join(
+                        a["name"] for a in rich_artists
+                    )
+                rich_album = song_info.get("album")
+                if rich_album:
+                    track["album"] = rich_album
+                play_count = song_info.get("playCount")
+
+                # --- Year: prefer song_info, fall back to album_fetcher ---
+                album_year = song_info.get("year")
+                if not album_year:
+                    album_browse_id = (
+                        track.get("album", {}).get("id")
+                        if track.get("album")
+                        else None
+                    )
+                    album_year = _fetch_album_year(album_browse_id)
+
+                if not is_music:
+                    progress.console.print(
+                        f"[yellow]Non-music: {title} - {artists_display}[/yellow]"
+                    )
+                    nonmusic_metadata: dict = {
+                        "genres": [], "moods": [], "instruments": [],
+                        "bpm": None,
+                    }
+                    track_data = _build_track_data(
+                        video_id, title, track, owner, nonmusic_metadata,
+                        is_music=False, album_year=album_year,
+                        play_count=play_count,
+                    )
+                    storage_port.save_track(track_data)
+                    results.append(track_data)
+                    _report(i, total, f"Non-music: {title}", tracker, track_data)
+                    progress.advance(task)
+                    continue
+
+                progress.console.print(f"Processing: {title} - {artists_display}")
+
+                # --- Download & enrich ---
                 try:
                     filename = audio_downloader.download(video_id, job_temp_dir)
-                    metadata = audio_enricher.enrich(filename, title, artists)
+                    metadata = audio_enricher.enrich(
+                        filename, title, artists_display,
+                    )
 
                     # Update tracker from enricher usage metadata
                     usage_meta = metadata.pop("usage_metadata", None)
@@ -363,7 +471,9 @@ def process_playlist(
                         os.remove(filename)
 
                     track_data = _build_track_data(
-                        video_id, title, artists, track, owner, metadata,
+                        video_id, title, track, owner, metadata,
+                        is_music=True, album_year=album_year,
+                        play_count=play_count,
                     )
 
                     storage_port.save_track(track_data)
@@ -381,7 +491,9 @@ def process_playlist(
                         "error": str(e),
                     }
                     err_track_data = _build_track_data(
-                        video_id, title, artists, track, owner, err_metadata,
+                        video_id, title, track, owner, err_metadata,
+                        is_music=True, album_year=album_year,
+                        play_count=play_count,
                     )
                     storage_port.save_track(err_track_data)
                     results.append(err_track_data)

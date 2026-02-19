@@ -55,11 +55,13 @@ def _override_ytmusic(yt_mock):
 class TestGetPlaylists:
     """Tests for GET /playlists."""
 
+    @patch("song_shake.features.songs.routes_playlists.auth.get_data_api_playlists")
     @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
-    def test_returns_playlists_with_liked_music(self, mock_history, mock_tasks):
+    def test_returns_playlists_with_liked_music(self, mock_history, mock_tasks, mock_data_api):
         """Should return playlists with Liked Music prepended when not present."""
         _override_ytmusic(_mock_ytmusic())
+        mock_data_api.return_value = list(SAMPLE_PLAYLISTS)
         mock_history.return_value = {}
         mock_tasks.return_value = {}
 
@@ -73,14 +75,16 @@ class TestGetPlaylists:
         # Original 2 playlists + Liked Music = 3
         assert len(data) == 3
 
+    @patch("song_shake.features.songs.routes_playlists.auth.get_data_api_playlists")
     @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
-    def test_does_not_duplicate_liked_music(self, mock_history, mock_tasks):
+    def test_does_not_duplicate_liked_music(self, mock_history, mock_tasks, mock_data_api):
         """Should not add Liked Music if already present."""
         playlists_with_liked = [
             {"playlistId": "LM", "title": "Your Likes", "thumbnails": [], "count": 50}
         ] + list(SAMPLE_PLAYLISTS)
         _override_ytmusic(_mock_ytmusic(playlists_with_liked))
+        mock_data_api.return_value = playlists_with_liked
         mock_history.return_value = {}
         mock_tasks.return_value = {}
 
@@ -90,11 +94,13 @@ class TestGetPlaylists:
         liked_count = sum(1 for p in data if p["playlistId"] == "LM")
         assert liked_count == 1
 
+    @patch("song_shake.features.songs.routes_playlists.auth.get_data_api_playlists")
     @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
-    def test_merges_enrichment_history(self, mock_history, mock_tasks):
+    def test_merges_enrichment_history(self, mock_history, mock_tasks, mock_data_api):
         """Should merge enrichment history into playlist responses."""
         _override_ytmusic(_mock_ytmusic())
+        mock_data_api.return_value = list(SAMPLE_PLAYLISTS)
         mock_history.return_value = {
             "PL_abc": {
                 "last_processed": "2026-01-15T10:00:00",
@@ -110,11 +116,13 @@ class TestGetPlaylists:
         assert pl_abc["last_processed"] == "2026-01-15T10:00:00"
         assert pl_abc["last_status"] == "completed"
 
+    @patch("song_shake.features.songs.routes_playlists.auth.get_data_api_playlists")
     @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
-    def test_marks_active_tasks(self, mock_history, mock_jobs):
+    def test_marks_active_tasks(self, mock_history, mock_jobs, mock_data_api):
         """Should flag playlists with active enrichment tasks."""
         _override_ytmusic(_mock_ytmusic())
+        mock_data_api.return_value = list(SAMPLE_PLAYLISTS)
         mock_history.return_value = {}
         mock_jobs.return_value = {
             "PL_abc": {"id": "job_PL_abc_a1b2c3d4", "status": "running", "playlist_id": "PL_abc"}
@@ -140,31 +148,29 @@ class TestGetPlaylists:
 
         assert response.status_code == 401
 
+    @patch("song_shake.features.songs.routes_playlists.auth.get_data_api_playlists")
     @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
-    def test_falls_back_to_data_api(self, mock_history, mock_tasks):
-        """Should fallback to Data API when library playlists fail."""
-        yt = MagicMock()
-        yt.get_library_playlists.side_effect = Exception("API error")
+    def test_falls_back_to_ytmusicapi(self, mock_history, mock_tasks, mock_data_api):
+        """Should fallback to ytmusicapi when Data API fails."""
+        yt = _mock_ytmusic()
         _override_ytmusic(yt)
+        mock_data_api.side_effect = Exception("Data API error")
         mock_history.return_value = {}
         mock_tasks.return_value = {}
 
-        with patch(
-            "song_shake.features.songs.routes_playlists.auth.get_data_api_playlists"
-        ) as mock_fallback:
-            mock_fallback.return_value = list(SAMPLE_PLAYLISTS)
+        response = client.get("/playlists")
 
-            response = client.get("/playlists")
+        assert response.status_code == 200
+        yt.get_library_playlists.assert_called_once()
 
-            assert response.status_code == 200
-            mock_fallback.assert_called_once()
-
+    @patch("song_shake.features.songs.routes_playlists.auth.get_data_api_playlists")
     @patch("song_shake.features.songs.routes_playlists.job_storage.get_all_active_jobs")
     @patch("song_shake.features.songs.routes_playlists.storage.get_all_history")
-    def test_handles_history_merge_error_gracefully(self, mock_history, mock_tasks):
+    def test_handles_history_merge_error_gracefully(self, mock_history, mock_tasks, mock_data_api):
         """Should return playlists even when history merge fails."""
         _override_ytmusic(_mock_ytmusic())
+        mock_data_api.return_value = list(SAMPLE_PLAYLISTS)
         mock_history.side_effect = Exception("DB error")
 
         response = client.get("/playlists")

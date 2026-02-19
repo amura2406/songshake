@@ -1,10 +1,22 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getSongs, getCurrentUser, getTags } from '../../api';
-import { Play, Pause, FastForward, Rewind, Volume2 } from 'lucide-react';
 import YouTube from 'react-youtube';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
+
+/**
+ * Format structured artists array to a display string.
+ * Handles both new format [{name, id}] and legacy string format.
+ */
+const formatArtists = (artists) => {
+  if (!artists) return 'Unknown';
+  if (typeof artists === 'string') return artists;
+  if (Array.isArray(artists)) {
+    return artists.map(a => a.name || a).join(', ');
+  }
+  return 'Unknown';
+};
 
 const Results = () => {
   const [songs, setSongs] = useState([]);
@@ -360,13 +372,13 @@ const Results = () => {
               <thead>
                 <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-white/5 bg-surface-darker/50">
                   <th className="px-4 py-3 font-semibold w-16 text-center">Preview</th>
-                  <th className="px-4 py-3 font-semibold w-1/3">Title</th>
-                  <th className="px-4 py-3 font-semibold">Artist</th>
+                  <th className="px-4 py-3 font-semibold">Title</th>
+                  <th className="px-4 py-3 font-semibold min-w-[220px]">Artist</th>
                   <th className="px-4 py-3 font-semibold">Genre</th>
                   <th className="px-4 py-3 font-semibold">Mood</th>
                   <th className="px-4 py-3 font-semibold">Instrument</th>
                   <th className="px-4 py-3 font-semibold text-center">BPM</th>
-                  <th className="px-4 py-3 font-semibold w-10"></th>
+                  <th className="px-4 py-3 font-semibold text-center">Plays</th>
                 </tr>
               </thead>
               <tbody className="text-sm divide-y divide-white/5">
@@ -387,34 +399,90 @@ const Results = () => {
                         <span className="material-icons text-sm">{(currentSong?.videoId === song.videoId && isPlaying) ? 'pause' : 'play_arrow'}</span>
                       </button>
                     </td>
-                    <td className="px-4 py-4 cursor-pointer">
+                    <td className="px-4 py-4">
                       <div className="flex items-center gap-4">
                         {song.thumbnails?.[0]?.url ? (
                           <img
                             src={song.thumbnails[0].url}
                             alt={song.title}
-                            className="h-10 w-10 rounded bg-surface-dark object-cover"
+                            className="h-10 w-10 rounded bg-surface-dark object-cover flex-shrink-0"
                           />
                         ) : (
-                          <div className="h-10 w-10 rounded bg-surface-dark flex items-center justify-center">
+                          <div className="h-10 w-10 rounded bg-surface-dark flex items-center justify-center flex-shrink-0">
                             <span className="material-icons text-slate-600 border">music_note</span>
                           </div>
                         )}
                         <div className="min-w-0">
-                          <div className={`font-medium truncate transition-colors ${currentSong?.videoId === song.videoId ? 'text-primary' : 'text-white group-hover:text-primary'}`}>
+                          <a
+                            href={song.url || `https://music.youtube.com/watch?v=${song.videoId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`font-medium truncate block transition-colors hover:underline ${currentSong?.videoId === song.videoId ? 'text-primary' : 'text-white group-hover:text-primary'}`}
+                            onClick={e => e.stopPropagation()}
+                          >
                             {song.title}
+                          </a>
+                          <div className="text-[10px] text-slate-500 truncate">
+                            {song.album ? (
+                              <>
+                                {song.album.id ? (
+                                  <a
+                                    href={`https://music.youtube.com/browse/${song.album.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="hover:text-primary transition-colors"
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    {song.album.name || song.album}
+                                  </a>
+                                ) : (
+                                  <span>{typeof song.album === 'string' ? song.album : song.album.name}</span>
+                                )}
+                                {song.year && <span> · {song.year}</span>}
+                              </>
+                            ) : song.year ? (
+                              <span>{song.year}</span>
+                            ) : null}
                           </div>
-                          <div className="text-xs text-slate-500 truncate">ID: {song.videoId}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-slate-300 truncate max-w-[150px]">{song.artists}</td>
+                    <td className="px-4 py-4 min-w-[220px]">
+                      <div className="flex gap-1 items-center whitespace-nowrap">
+                        {Array.isArray(song.artists) ? (
+                          song.artists.map((artist, i) => (
+                            <span key={i}>
+                              {artist.id ? (
+                                <a
+                                  href={`https://music.youtube.com/channel/${artist.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-slate-300 hover:text-primary transition-colors text-sm"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  {artist.name}
+                                </a>
+                              ) : (
+                                <span className="text-slate-300 text-sm">{artist.name}</span>
+                              )}
+                              {i < song.artists.length - 1 && <span className="text-slate-600">, </span>}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-slate-300 text-sm">{song.artists}</span>
+                        )}
+                      </div>
+                    </td>
+
                     <td className="px-4 py-4">
                       <div className="flex gap-2 flex-wrap">
                         {song.genres?.map((genre, i) => (
                           <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">{genre}</span>
                         ))}
-                        {song.success === false && (
+                        {song.isMusic === false && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">Non-Music</span>
+                        )}
+                        {song.success === false && song.isMusic !== false && (
                           <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
                         )}
                       </div>
@@ -439,12 +507,8 @@ const Results = () => {
                     <td className="px-4 py-4 text-center text-slate-300 text-xs font-medium">
                       {song.bpm || '-'}
                     </td>
-                    <td className="px-4 py-4 text-right">
-                      {song.url && (
-                        <a href={song.url} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-white" onClick={e => e.stopPropagation()}>
-                          <span className="material-icons text-sm">open_in_new</span>
-                        </a>
-                      )}
+                    <td className="px-4 py-4 text-center text-slate-400 text-xs font-medium">
+                      {song.playCount || '-'}
                     </td>
                   </tr>
                 ))}
@@ -496,7 +560,7 @@ const Results = () => {
             )}
             <div className="min-w-0">
               <h4 className="text-sm font-bold text-white mb-0 truncate">Preview: {currentSong.title}</h4>
-              <p className="text-[10px] text-slate-400 font-mono truncate">{formatSeconds(playbackProgress)} / {formatSeconds(duration)} • {currentSong.artists}</p>
+              <p className="text-[10px] text-slate-400 font-mono truncate">{formatSeconds(playbackProgress)} / {formatSeconds(duration)} • {formatArtists(currentSong.artists)}</p>
             </div>
           </div>
 

@@ -39,36 +39,14 @@ export const logoutUser = async () => {
   await api.get('/auth/logout');
 };
 
-export const login = async (headers_raw) => {
-  await api.post('/auth/login', { headers_raw });
-};
+
 
 export const getPlaylists = async () => {
   const res = await api.get('/api/playlists');
   return res.data;
 };
 
-export const getAuthConfig = async () => {
-  const res = await api.get('/auth/config');
-  return res.data; // { use_env: boolean }
-};
 
-export const initGoogleAuth = async (clientId = null, clientSecret = null) => {
-  const res = await api.post('/auth/google/init', {
-    client_id: clientId,
-    client_secret: clientSecret,
-  });
-  return res.data;
-};
-
-export const pollGoogleAuth = async (deviceCode, clientId = null, clientSecret = null) => {
-  const res = await api.post('/auth/google/poll', {
-    device_code: deviceCode,
-    client_id: clientId,
-    client_secret: clientSecret,
-  });
-  return res.data;
-};
 
 export const getTags = async (owner) => {
   const res = await api.get('/api/tags', { params: { owner } });

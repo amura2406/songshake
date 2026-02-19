@@ -58,3 +58,19 @@ class PlaylistFetcher(Protocol):
     def get_title(self, playlist_id: str) -> str:
         """Get a playlist's title."""
         ...
+
+
+class AlbumFetcher(Protocol):
+    """Abstract album metadata fetching (unauthenticated)."""
+
+    def get_album(self, browse_id: str) -> dict:
+        """Fetch album metadata including year, artists, track count."""
+        ...
+
+
+class SongFetcher(Protocol):
+    """Abstract song metadata fetching (unauthenticated)."""
+
+    def get_song(self, video_id: str) -> dict:
+        """Fetch song details including musicVideoType."""
+        ...

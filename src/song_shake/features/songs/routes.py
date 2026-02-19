@@ -17,13 +17,16 @@ router = APIRouter(tags=["songs"])
 class Song(BaseModel):
     videoId: str
     title: str
-    artists: str
-    album: Optional[str] = None
+    artists: Any  # str (legacy) or list[{name, id}] (new)
+    album: Any = None  # str (legacy) or {name, id} (new)
+    year: Optional[str] = None
+    isMusic: Optional[bool] = None
     thumbnails: List[Dict[str, Any]] = []
     genres: List[str] = []
     moods: List[str] = []
     instruments: List[str] = []
     bpm: Optional[int] = None
+    playCount: Optional[str] = None
     status: str
     error_message: Optional[str] = None
     url: Optional[str] = None

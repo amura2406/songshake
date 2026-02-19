@@ -122,11 +122,14 @@ def get_data_api_tracks(yt: YTMusic, playlist_id: str, limit: int = 500):
             snippet = item['snippet']
             resource = snippet.get('resourceId', {})
             if resource.get('kind') == 'youtube#video':
+                # Strip "- Topic" suffix from auto-generated music channels
+                raw_artist = snippet.get('videoOwnerChannelTitle', 'Unknown')
+                artist_name = raw_artist.removesuffix(' - Topic').strip()
                 # Map to YTMusic track format as best as possible
                 tracks.append({
                     'videoId': resource['videoId'],
                     'title': snippet['title'],
-                    'artists': [{'name': snippet.get('videoOwnerChannelTitle', 'Unknown')}],
+                    'artists': [{'name': artist_name}],
                     'album': None,
                     'thumbnails': [{'url': snippet['thumbnails'].get('default', {}).get('url', '')}] if 'thumbnails' in snippet else []
                 })

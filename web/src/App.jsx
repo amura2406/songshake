@@ -5,6 +5,7 @@ import Login from './features/auth/Login';
 import Dashboard from './features/enrichment/Dashboard';
 import Results from './features/songs/Results';
 import Layout from './components/layout/Layout';
+
 import { JobsProvider } from './features/jobs/useJobs';
 
 const PrivateRoute = ({ children }) => {
@@ -61,6 +62,7 @@ function App() {
             </PrivateRoute>
           }
         />
+
       </Routes>
     </Router>
   );

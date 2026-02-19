@@ -192,3 +192,20 @@
         box-shadow: 0 0 12px rgba(175, 37, 244, 0.6), 0 0 24px rgba(175, 37, 244, 0.3);
     }
 }
+
+/* Pulsating shadow for login panel */
+.shadow-pulse {
+    animation: shadow-pulse-kf 3s ease-in-out infinite;
+}
+
+@keyframes shadow-pulse-kf {
+
+    0%,
+    100% {
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    50% {
+        box-shadow: 0 4px 40px rgba(175, 37, 244, 0.25), 0 0 60px rgba(175, 37, 244, 0.1);
+    }
+}

@@ -119,6 +119,33 @@ class FakeEnricherError:
         }
 
 
+class FakeSongFetcher:
+    """Returns pre-configured song metadata."""
+
+    def __init__(self, is_music: bool = True):
+        self._is_music = is_music
+
+    def get_song(self, video_id: str) -> dict:
+        return {
+            "isMusic": self._is_music,
+            "artists": [{"name": "Test Artist", "id": "UC_test"}],
+            "album": {"name": "Test Album", "id": "MPRE_test"},
+            "year": "2024",
+            "playCount": "3.5M",
+            "channelId": "UC_test",
+        }
+
+
+class FakeAlbumFetcher:
+    """Returns pre-configured album metadata."""
+
+    def __init__(self, year: str | None = "2024"):
+        self._year = year
+
+    def get_album(self, browse_id: str) -> dict:
+        return {"year": self._year}
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -207,7 +234,7 @@ class TestBuildTrackData:
     """Tests for the _build_track_data pure function."""
 
     def test_success_track(self):
-        """Should build a success track_data dict."""
+        """Should build a success track_data dict with structured artists."""
         track = _make_track("abc123", "My Song", "Dua Lipa")
         metadata = {
             "genres": ["Pop"],
@@ -215,15 +242,18 @@ class TestBuildTrackData:
             "instruments": ["Synth"],
             "bpm": 128,
         }
-        result = _build_track_data("abc123", "My Song", "Dua Lipa", track, "user1", metadata)
+        result = _build_track_data("abc123", "My Song", track, "user1", metadata)
 
         assert result["videoId"] == "abc123"
         assert result["title"] == "My Song"
-        assert result["artists"] == "Dua Lipa"
+        # artists is now a structured list
+        assert isinstance(result["artists"], list)
+        assert result["artists"][0]["name"] == "Dua Lipa"
         assert result["genres"] == ["Pop"]
         assert result["bpm"] == 128
         assert result["status"] == "success"
         assert result["success"] is True
+        assert result["isMusic"] is True
         assert result["error_message"] is None
         assert result["owner"] == "user1"
         assert "music.youtube.com" in result["url"]
@@ -232,7 +262,7 @@ class TestBuildTrackData:
         """Should build an error track_data dict when metadata has error."""
         track = _make_track("xyz789")
         metadata = {"genres": [], "moods": [], "instruments": [], "bpm": None, "error": "boom"}
-        result = _build_track_data("xyz789", "Bad", "None", track, "u", metadata)
+        result = _build_track_data("xyz789", "Bad", track, "u", metadata)
 
         assert result["status"] == "error"
         assert result["success"] is False
@@ -242,8 +272,18 @@ class TestBuildTrackData:
         """Should handle track with no album gracefully."""
         track = {"videoId": "v1", "title": "T", "artists": [], "thumbnails": []}
         metadata = {"genres": [], "moods": [], "instruments": [], "bpm": None}
-        result = _build_track_data("v1", "T", "", track, "o", metadata)
+        result = _build_track_data("v1", "T", track, "o", metadata)
         assert result["album"] is None
+
+    def test_non_music_track(self):
+        """Should mark track as non-music when is_music=False."""
+        track = _make_track("nm1", "Tutorial Video")
+        metadata = {"genres": [], "moods": [], "instruments": [], "bpm": None}
+        result = _build_track_data("nm1", "Tutorial Video", track, "o", metadata, is_music=False)
+
+        assert result["isMusic"] is False
+        assert result["status"] == "non-music"
+        assert result["success"] is False
 
 
 # ===========================================================================
@@ -269,6 +309,8 @@ class TestProcessPlaylist:
             playlist_fetcher=fetcher,
             audio_downloader=downloader,
             audio_enricher=enricher,
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(results) == 2
@@ -294,6 +336,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher(tracks),
             audio_downloader=downloader,
             audio_enricher=enricher,
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         # Cached track is re-saved (owner link) but not downloaded or enriched
@@ -316,6 +360,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher(tracks),
             audio_downloader=downloader,
             audio_enricher=enricher,
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(results) == 1
@@ -332,6 +378,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher([]),
             audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
         assert results == []
 
@@ -349,6 +397,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher(tracks),
             audio_downloader=downloader,
             audio_enricher=enricher,
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(results) == 1
@@ -369,6 +419,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher(tracks),
             audio_downloader=FakeDownloaderRaises("Network timeout"),
             audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(results) == 1
@@ -391,6 +443,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher(tracks),
             audio_downloader=downloader,
             audio_enricher=enricher,
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         # wipe=True means the track is re-processed even though it was cached
@@ -416,6 +470,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher(tracks),
             audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(progress_calls) >= 3  # at least: start, processing, finish
@@ -438,6 +494,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher(tracks),
             audio_downloader=downloader,
             audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(results) == 0
@@ -455,6 +513,8 @@ class TestProcessPlaylist:
             playlist_fetcher=FakePlaylistFetcher(tracks),
             audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(storage._history) == 1
@@ -480,6 +540,8 @@ class TestProcessPlaylist:
                 "bpm": 90,
                 "usage_metadata": {"prompt_tokens": 500, "candidates_tokens": 200},
             }),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
         )
 
         # Final progress call should reflect accumulated tokens

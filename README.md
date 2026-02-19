@@ -1,10 +1,10 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.7.0)
+# Song Shake (v0.8.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
 
-This tool takes your YouTube Music playlists and enriches them with **Genres** and **Moods** using the power of **Google Gemini 3 Flash**.
+This tool takes your YouTube Music playlists and enriches them with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Count** using the power of **Google Gemini 3 Flash** and **YouTube Music API**.
 
 ## Features
 
@@ -14,6 +14,7 @@ This tool takes your YouTube Music playlists and enriches them with **Genres** a
 -   **Real-Time AI Usage Tracking**: Live token count and cost updates via SSE with animated footer display.
 -   **Zombie Job Recovery**: Jobs orphaned by server restart are automatically detected and cleanly cancelled.
 -   **CLI Tool**: Classic command-line interface for quick operations.
+-   **Rich Song Metadata**: Fetches detailed per-song data including multiple artists with individual channel links, album with browse links, release year, and play count (e.g. 3.5M, 123K).
 -   **Smart Enrichment**: Uses AI to analyze audio and determine genre/mood. Core logic is fully testable via Protocol-based dependency injection.
 -   **Local Database**: Stores results in `songs.db` (TinyDB).
 -   **Seamless Auth**: Securely authenticate with your YouTube Music account.

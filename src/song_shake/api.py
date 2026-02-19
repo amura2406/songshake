@@ -18,7 +18,6 @@ from song_shake.features.auth.routes import router as auth_router
 from song_shake.features.songs.routes_playlists import router as playlists_router
 from song_shake.features.songs.routes import router as songs_router
 from song_shake.features.jobs.routes import router as jobs_router
-
 app = FastAPI(title="Song Shake API")
 
 # Allow CORS for development

@@ -7,11 +7,8 @@ import time
 import requests
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
 from typing import Optional
 from urllib.parse import urlencode
-from ytmusicapi import YTMusic, setup
-from ytmusicapi.auth.oauth import OAuthCredentials, RefreshingToken
 
 from song_shake.features.auth import auth
 from song_shake.platform.logging_config import get_logger
@@ -21,29 +18,12 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-# --- Models ---
-
-class LoginRequest(BaseModel):
-    headers_raw: Optional[str] = None
-
-
-class OAuthInitRequest(BaseModel):
-    client_id: Optional[str] = None
-    client_secret: Optional[str] = None
-
-
-class OAuthPollRequest(BaseModel):
-    device_code: str
-    client_id: Optional[str] = None
-    client_secret: Optional[str] = None
-
-
 # --- Helpers ---
 
 OAUTH_FILE = "oauth.json"
 
 
-def get_ytmusic() -> YTMusic:
+def get_ytmusic():
     """Get an authenticated YTMusic instance or raise 401."""
     try:
         return auth.get_ytmusic()
@@ -166,42 +146,6 @@ def auth_status():
     return {"authenticated": authenticated}
 
 
-@router.post("/login")
-def login(request: LoginRequest):
-    logger.info("login_started", method="headers")
-    if not request.headers_raw:
-        raise HTTPException(status_code=400, detail="Headers required")
-
-    try:
-        is_json = False
-        try:
-            json.loads(request.headers_raw)
-            is_json = True
-        except json.JSONDecodeError:
-            pass
-
-        if is_json:
-            with open(OAUTH_FILE, "w") as f:
-                f.write(request.headers_raw)
-        else:
-            setup(filepath=OAUTH_FILE, headers_raw=request.headers_raw)
-
-        YTMusic(OAUTH_FILE)
-        logger.info("login_success", method="headers")
-        return {"status": "success"}
-    except Exception as e:
-        if os.path.exists(OAUTH_FILE):
-            os.remove(OAUTH_FILE)
-        logger.warning("login_failed", method="headers", error=str(e))
-        raise HTTPException(status_code=400, detail="Invalid headers format")
-
-
-@router.get("/config")
-def auth_config():
-    has_env = bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET"))
-    return {"use_env": has_env}
-
-
 @router.get("/google/login")
 def google_auth_login():
     logger.info("google_auth_login_started")
@@ -260,60 +204,3 @@ def google_auth_callback(code: str):
         logger.error("google_auth_callback_failed", error=str(e))
         raise HTTPException(status_code=400, detail="Token exchange failed")
 
-
-@router.post("/google/init")
-def google_auth_init(request: OAuthInitRequest):
-    logger.info("google_auth_init_started")
-    try:
-        client_id = request.client_id or os.getenv("GOOGLE_CLIENT_ID")
-        client_secret = request.client_secret or os.getenv("GOOGLE_CLIENT_SECRET")
-
-        if not client_id or not client_secret:
-            raise HTTPException(
-                status_code=400,
-                detail="Client ID and Secret required (not found in request or env)",
-            )
-
-        creds = OAuthCredentials(client_id=client_id, client_secret=client_secret)
-        code = creds.get_code()
-        logger.info("google_auth_init_success")
-        return code
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("google_auth_init_failed", error=str(e))
-        raise HTTPException(status_code=400, detail="Failed to initiate OAuth flow")
-
-
-@router.post("/google/poll")
-def google_auth_poll(request: OAuthPollRequest):
-    logger.info("google_auth_poll_started")
-    try:
-        client_id = request.client_id or os.getenv("GOOGLE_CLIENT_ID")
-        client_secret = request.client_secret or os.getenv("GOOGLE_CLIENT_SECRET")
-
-        if not client_id or not client_secret:
-            raise HTTPException(status_code=400, detail="Client ID and Secret required")
-
-        creds = OAuthCredentials(client_id=client_id, client_secret=client_secret)
-        token = creds.token_from_code(request.device_code)
-
-        final_token = token.copy()
-        final_token["client_id"] = client_id
-        final_token["client_secret"] = client_secret
-
-        ref_token = RefreshingToken(credentials=creds, **token)
-        ref_token.update(ref_token.as_dict())
-
-        with open(OAUTH_FILE, "w") as f:
-            f.write(ref_token.as_json())
-
-        logger.info("google_auth_poll_success")
-        return {"status": "success"}
-
-    except Exception as e:
-        err_str = str(e).lower()
-        if "authorization_pending" in err_str or "precondition_required" in err_str:
-            return {"status": "pending"}
-        logger.error("google_auth_poll_failed", error=str(e))
-        raise HTTPException(status_code=400, detail="OAuth polling failed")

@@ -37,15 +37,18 @@ def get_playlists(yt: YTMusic = Depends(get_ytmusic)):
     logger.info("get_playlists_started")
     try:
         playlists = []
+        # Primary: YouTube Data API v3 (returns all user playlists reliably)
         try:
-            playlists = yt.get_library_playlists(limit=50)
+            playlists = auth.get_data_api_playlists(yt, limit=50)
+            logger.info("playlists_fetched_via_data_api", count=len(playlists))
         except Exception as e:
-            logger.debug("get_library_playlists_failed", error=str(e))
+            logger.debug("data_api_playlists_failed", error=str(e))
+            # Fallback: ytmusicapi library playlists
             try:
-                logger.info("attempting_data_api_fallback")
-                playlists = auth.get_data_api_playlists(yt, limit=50)
+                playlists = yt.get_library_playlists(limit=50)
+                logger.info("playlists_fetched_via_ytmusicapi", count=len(playlists))
             except Exception as e2:
-                logger.error("data_api_fallback_failed", error=str(e2))
+                logger.error("ytmusicapi_playlists_also_failed", error=str(e2))
 
         # Manually add Liked Music if not present
         has_liked = any(
