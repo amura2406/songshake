@@ -21,6 +21,8 @@ class StoragePort(Protocol):
 
     def get_tags(self, owner: str) -> list[dict]: ...
 
+    def get_failed_tracks(self, owner: str) -> list[dict]: ...
+
     def save_enrichment_history(
         self, playlist_id: str, owner: str, metadata: dict
     ) -> None: ...
@@ -73,4 +75,10 @@ class SongFetcher(Protocol):
 
     def get_song(self, video_id: str) -> dict:
         """Fetch song details including musicVideoType."""
+        ...
+
+    def search_playable_alternative(
+        self, title: str, artist: str
+    ) -> str | None:
+        """Find a playable videoId for a song when original is UNPLAYABLE."""
         ...

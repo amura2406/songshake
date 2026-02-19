@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getSongs, getTags } from '../../api';
+import { getSongs, getTags, retrySong } from '../../api';
 import YouTube from 'react-youtube';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
@@ -53,6 +53,7 @@ const Results = () => {
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [retrying, setRetrying] = useState({});  // videoId → 'loading' | 'done' | 'error'
   const limit = 50;
 
   const location = useLocation();
@@ -230,6 +231,35 @@ const Results = () => {
     const seekTime = percentage * duration;
     playerContext.seekTo(seekTime, true);
     setPlaybackProgress(seekTime);
+  };
+
+  const handleRetry = async (e, videoId) => {
+    e.stopPropagation();
+    if (retrying[videoId]) return;
+    setRetrying(prev => ({ ...prev, [videoId]: 'loading' }));
+    try {
+      await retrySong(videoId);
+      setRetrying(prev => ({ ...prev, [videoId]: 'done' }));
+      // Reload after a brief delay to allow backend processing
+      setTimeout(() => {
+        loadData();
+        setRetrying(prev => {
+          const next = { ...prev };
+          delete next[videoId];
+          return next;
+        });
+      }, 3000);
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'Retry failed';
+      setRetrying(prev => ({ ...prev, [videoId]: detail }));
+      setTimeout(() => {
+        setRetrying(prev => {
+          const next = { ...prev };
+          delete next[videoId];
+          return next;
+        });
+      }, 4000);
+    }
   };
 
   return (
@@ -425,6 +455,7 @@ const Results = () => {
                               <img
                                 src={song.thumbnails[0].url}
                                 alt={song.title}
+                                referrerPolicy="no-referrer"
                                 className="h-12 w-12 rounded-full bg-surface-dark object-cover"
                               />
                             ) : (
@@ -458,6 +489,26 @@ const Results = () => {
                             )}
                           </div>
                           <div className="min-w-0">
+                            {song.success === false && song.isMusic !== false && (
+                              <span className="inline-flex items-center gap-1 mb-0.5">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
+                                {retrying[song.videoId] === 'loading' ? (
+                                  <span className="w-4 h-4 rounded-full border border-primary border-t-transparent animate-spin inline-block" title="Retrying…" />
+                                ) : retrying[song.videoId] === 'done' ? (
+                                  <span className="material-icons text-emerald-400 text-sm" title="Retry queued">check_circle</span>
+                                ) : typeof retrying[song.videoId] === 'string' ? (
+                                  <span className="text-[10px] text-red-400 italic" title={retrying[song.videoId]}>error</span>
+                                ) : (
+                                  <button
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+                                    onClick={(e) => handleRetry(e, song.videoId)}
+                                    title="Retry enrichment"
+                                  >
+                                    <span className="material-icons text-slate-400 hover:text-primary text-sm">refresh</span>
+                                  </button>
+                                )}
+                              </span>
+                            )}
                             <a
                               href={song.url || `https://music.youtube.com/watch?v=${song.videoId}`}
                               target="_blank"
@@ -468,7 +519,9 @@ const Results = () => {
                               {song.title}
                             </a>
                             <div className="text-[10px] text-slate-500 truncate">
-                              {song.album ? (
+                              {song.isMusic === false ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">Non-Music</span>
+                              ) : song.album ? (
                                 <>
                                   {song.album.id ? (
                                     <a
@@ -524,12 +577,7 @@ const Results = () => {
                           {song.genres?.map((genre, i) => (
                             <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">{genre}</span>
                           ))}
-                          {song.isMusic === false && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">Non-Music</span>
-                          )}
-                          {song.success === false && song.isMusic !== false && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
-                          )}
+
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -588,7 +636,7 @@ const Results = () => {
               {/* Hidden YouTube player */}
               <div className="opacity-0 absolute pointer-events-none w-0 h-0 overflow-hidden">
                 <YouTube
-                  videoId={currentSong.videoId}
+                  videoId={currentSong.playableVideoId || currentSong.videoId}
                   opts={{
                     height: '1',
                     width: '1',

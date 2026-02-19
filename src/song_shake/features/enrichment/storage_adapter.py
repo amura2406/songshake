@@ -29,6 +29,9 @@ class TinyDBStorageAdapter:
     def get_tags(self, owner: str) -> list[dict]:
         return storage.get_tags(self._db, owner)
 
+    def get_failed_tracks(self, owner: str) -> list[dict]:
+        return storage.get_failed_tracks(self._db, owner)
+
     def save_enrichment_history(
         self, playlist_id: str, owner: str, metadata: dict
     ) -> None:

@@ -22,6 +22,8 @@ class Song(BaseModel):
     album: Any = None  # str (legacy) or {name, id} (new)
     year: Optional[str] = None
     isMusic: Optional[bool] = None
+    success: Optional[bool] = None
+    playableVideoId: Optional[str] = None
     thumbnails: List[Dict[str, Any]] = []
     genres: List[str] = []
     moods: List[str] = []

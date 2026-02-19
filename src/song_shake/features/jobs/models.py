@@ -20,6 +20,7 @@ class JobType(str, Enum):
     """Extensible job type identifier."""
 
     ENRICHMENT = "enrichment"
+    RETRY = "retry"
 
 
 TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELLED})

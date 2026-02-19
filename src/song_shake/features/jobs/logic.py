@@ -228,3 +228,153 @@ def run_enrichment_job(job_id: str, playlist_id: str, owner: str, api_key: str, 
     # Cleanup in-memory cancel event
     with _live_state_lock:
         _cancel_events.pop(job_id, None)
+
+
+def run_retry_job(
+    job_id: str,
+    owner: str,
+    api_key: str,
+    video_ids: list[str] | None = None,
+) -> None:
+    """Run the retry process as a background job.
+
+    Wraps ``retry_failed_tracks`` with the same lifecycle management
+    as ``run_enrichment_job``.
+    """
+    cancel_event = threading.Event()
+    with _live_state_lock:
+        _cancel_events[job_id] = cancel_event
+
+    baseline_usage = job_storage.get_ai_usage(owner)
+
+    with _live_state_lock:
+        _job_live_state[job_id] = {
+            "id": job_id,
+            "status": JobStatus.RUNNING.value,
+            "total": 0,
+            "current": 0,
+            "message": "Initializing retry…",
+            "errors": [],
+            "ai_usage": {"input_tokens": 0, "output_tokens": 0, "cost": 0.0},
+        }
+        if owner not in _ai_usage_live:
+            _ai_usage_live[owner] = baseline_usage.copy()
+
+    job_errors: list[dict] = []
+    job_ai_usage = {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}
+    prev_tokens = 0
+    prev_cost = 0.0
+
+    def _cancel_check() -> None:
+        if cancel_event.is_set():
+            raise CancelledError("Job cancelled by user")
+
+    def _on_progress(progress: dict) -> None:
+        nonlocal job_ai_usage, prev_tokens, prev_cost
+
+        current = progress.get("current", 0)
+        total = progress.get("total", 0)
+        message = progress.get("message", "")
+        tokens = progress.get("tokens", 0)
+        cost = progress.get("cost", 0.0)
+        track_data = progress.get("track_data")
+
+        if track_data and track_data.get("error_message"):
+            job_errors.append({
+                "track_title": track_data.get("title", ""),
+                "track_video_id": track_data.get("videoId", ""),
+                "message": track_data["error_message"],
+            })
+
+        job_ai_usage = {"input_tokens": tokens, "output_tokens": 0, "cost": cost}
+
+        delta_tokens = tokens - prev_tokens
+        delta_cost = cost - prev_cost
+        prev_tokens = tokens
+        prev_cost = cost
+
+        with _live_state_lock:
+            _job_live_state[job_id] = {
+                "id": job_id,
+                "status": JobStatus.RUNNING.value,
+                "total": total,
+                "current": current,
+                "message": message,
+                "errors": job_errors.copy(),
+                "ai_usage": job_ai_usage.copy(),
+            }
+
+            current_live = _ai_usage_live.get(
+                owner, {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}
+            )
+            _ai_usage_live[owner] = {
+                "input_tokens": current_live["input_tokens"] + delta_tokens,
+                "output_tokens": current_live["output_tokens"],
+                "cost": current_live["cost"] + delta_cost,
+            }
+
+        if current == 0 or current == total or current % 5 == 0:
+            job_storage.update_job(job_id, {
+                "status": JobStatus.RUNNING.value,
+                "total": total,
+                "current": current,
+                "message": message,
+                "errors": job_errors.copy(),
+                "ai_usage": job_ai_usage.copy(),
+            })
+
+    try:
+        logger.info("retry_job_started", job_id=job_id, owner=owner)
+        job_storage.update_job(job_id, {"status": JobStatus.RUNNING.value})
+
+        enrichment.retry_failed_tracks(
+            owner=owner,
+            api_key=api_key,
+            on_progress=_on_progress,
+            cancel_check=_cancel_check,
+            video_ids=video_ids,
+        )
+
+        final_status = JobStatus.COMPLETED.value
+        final_message = "Retry complete"
+
+    except CancelledError:
+        logger.info("retry_job_cancelled", job_id=job_id)
+        final_status = JobStatus.CANCELLED.value
+        final_message = "Cancelled by user"
+
+    except Exception as e:
+        logger.error("retry_job_failed", job_id=job_id, error=str(e))
+        final_status = JobStatus.ERROR.value
+        final_message = str(e)
+        job_errors.append({"track_title": "", "track_video_id": "", "message": str(e)})
+
+    # --- Finalise ---
+    with _live_state_lock:
+        _job_live_state[job_id] = {
+            **_job_live_state.get(job_id, {}),
+            "status": final_status,
+            "message": final_message,
+            "errors": job_errors.copy(),
+            "ai_usage": job_ai_usage.copy(),
+        }
+
+    job_storage.update_job(job_id, {
+        "status": final_status,
+        "message": final_message,
+        "errors": job_errors,
+        "ai_usage": job_ai_usage,
+    })
+
+    try:
+        tokens_in = job_ai_usage.get("input_tokens", 0)
+        cost_total = job_ai_usage.get("cost", 0.0)
+        if tokens_in > 0 or cost_total > 0:
+            updated = job_storage.update_ai_usage(owner, tokens_in, 0, cost_total)
+            with _live_state_lock:
+                _ai_usage_live[owner] = updated
+    except Exception as e:
+        logger.error("ai_usage_update_failed", job_id=job_id, error=str(e))
+
+    with _live_state_lock:
+        _cancel_events.pop(job_id, None)

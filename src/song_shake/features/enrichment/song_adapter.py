@@ -56,12 +56,23 @@ class YTMusicSongAdapter:
             - playCount: str | None  (formatted: "3.5M", "123K")
             - thumbnails: list[{url, width, height}]
             - channelId: str
+            - playable: bool
         """
-        # 1. Rich metadata from watch playlist (artists, album, year)
-        watch_data = self._fetch_watch_playlist(video_id)
-
-        # 2. Play count + music detection from get_song
+        # 1. Play count + music detection + playability from get_song
         song_data = self._fetch_song_details(video_id)
+        playable = song_data.get("playable", True)
+
+        # 2. Rich metadata from watch playlist (artists, album, year)
+        #    Skip if video is UNPLAYABLE — watch playlist returns wrong
+        #    cross-referenced metadata for unplayable videos.
+        if playable:
+            watch_data = self._fetch_watch_playlist(video_id)
+        else:
+            watch_data = {}
+            logger.info(
+                "skipping_watch_playlist_for_unplayable",
+                video_id=video_id,
+            )
 
         # Merge: watch playlist provides artists/album/year,
         # get_song provides viewCount and musicVideoType
@@ -77,6 +88,7 @@ class YTMusicSongAdapter:
         )
 
         return {
+            "title": song_data.get("title"),
             "isMusic": is_music,
             "artists": artists,
             "album": album,
@@ -84,6 +96,7 @@ class YTMusicSongAdapter:
             "playCount": play_count,
             "thumbnails": thumbnails,
             "channelId": channel_id,
+            "playable": playable,
         }
 
     def _fetch_watch_playlist(self, video_id: str) -> dict:
@@ -119,7 +132,7 @@ class YTMusicSongAdapter:
             return {}
 
     def _fetch_song_details(self, video_id: str) -> dict:
-        """Fetch play count and music type detection from get_song."""
+        """Fetch play count, music type detection, and playability from get_song."""
         try:
             result = self._yt.get_song(video_id)
             vd = result.get("videoDetails", {})
@@ -130,6 +143,10 @@ class YTMusicSongAdapter:
 
             author = vd.get("author", "").removesuffix(" - Topic").strip()
 
+            # Check playability status
+            ps = result.get("playabilityStatus", {})
+            playable = ps.get("status") != "UNPLAYABLE"
+
             # Extract square album art thumbnails
             raw_thumbs = vd.get("thumbnail", {}).get("thumbnails", [])
             thumbnails = [
@@ -138,6 +155,7 @@ class YTMusicSongAdapter:
             ]
 
             return {
+                "title": vd.get("title"),
                 "isMusic": mvt in MUSIC_VIDEO_TYPES if mvt else False,
                 "artists": [{"name": author, "id": vd.get("channelId", "")}] if author else [],
                 "album": None,
@@ -145,6 +163,7 @@ class YTMusicSongAdapter:
                 "playCount": play_count,
                 "thumbnails": thumbnails,
                 "channelId": vd.get("channelId", ""),
+                "playable": playable,
             }
         except Exception as e:
             logger.warning("get_song_failed", video_id=video_id, error=str(e))
@@ -156,4 +175,34 @@ class YTMusicSongAdapter:
                 "playCount": None,
                 "thumbnails": [],
                 "channelId": "",
+                "playable": True,
             }
+
+    def search_playable_alternative(
+        self, title: str, artist: str
+    ) -> str | None:
+        """Search YTMusic for a playable videoId matching the title+artist.
+
+        Used when the original videoId is UNPLAYABLE.
+        Returns the first matching videoId, or None if nothing found.
+        """
+        query = f"{title} {artist}"
+        try:
+            results = self._yt.search(query, filter="songs", limit=5)
+            for r in results:
+                alt_vid = r.get("videoId")
+                if alt_vid:
+                    logger.info(
+                        "found_playable_alternative",
+                        original_query=query,
+                        alternative_video_id=alt_vid,
+                        alternative_title=r.get("title"),
+                    )
+                    return alt_vid
+        except Exception as e:
+            logger.warning(
+                "search_playable_alternative_failed",
+                query=query,
+                error=str(e),
+            )
+        return None

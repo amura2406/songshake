@@ -189,6 +189,7 @@ def _build_track_data(
     is_music: bool = True,
     album_year: str | None = None,
     play_count: str | None = None,
+    playable_video_id: str | None = None,
 ) -> dict:
     """Assemble a track_data dict from raw track info and enrichment metadata.
 
@@ -221,7 +222,10 @@ def _build_track_data(
     else:
         status = "success"
 
-    return {
+    # Use playable videoId for the URL so the link actually works
+    url_vid = playable_video_id or video_id
+
+    result = {
         "videoId": video_id,
         "title": title,
         "artists": artists,
@@ -237,9 +241,14 @@ def _build_track_data(
         "status": status,
         "success": is_music and not is_error,
         "error_message": metadata.get("error"),
-        "url": f"https://music.youtube.com/watch?v={video_id}",
+        "url": f"https://music.youtube.com/watch?v={url_vid}",
         "owner": owner,
     }
+
+    if playable_video_id:
+        result["playableVideoId"] = playable_video_id
+
+    return result
 
 
 def process_playlist(
@@ -543,6 +552,326 @@ def process_playlist(
 
     finally:
         # Clean up only this job's temp directory
+        if os.path.exists(job_temp_dir):
+            try:
+                shutil.rmtree(job_temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+
+def retry_failed_tracks(
+    owner: str = "local",
+    api_key: str | None = None,
+    on_progress: callable = None,
+    cancel_check: callable = None,
+    video_ids: list[str] | None = None,
+    # --- DI ports (None = construct production adapters) ---
+    storage_port: StoragePort | None = None,
+    audio_downloader: AudioDownloader | None = None,
+    audio_enricher: AudioEnricher | None = None,
+    song_fetcher: SongFetcher | None = None,
+    album_fetcher: AlbumFetcher | None = None,
+) -> list[dict]:
+    """Retry enrichment for failed tracks.
+
+    Re-runs the full pipeline (metadata fetch, download, AI enrich) for
+    each error-status track.  When a video is UNPLAYABLE, searches YTMusic
+    for a playable alternative and downloads that instead.
+
+    Args:
+        owner: Owner identifier for track ownership.
+        api_key: Google/Gemini API key.
+        on_progress: Callback with dict {current, total, message, tokens, cost, track_data}.
+        cancel_check: Callable that raises on cancellation.
+        video_ids: Optional list of specific videoIds to retry.
+            If None, retries ALL failed tracks for the owner.
+        storage_port: StoragePort implementation.
+        audio_downloader: AudioDownloader implementation.
+        audio_enricher: AudioEnricher implementation.
+        song_fetcher: SongFetcher implementation.
+        album_fetcher: AlbumFetcher implementation.
+
+    Returns:
+        List of updated track_data dicts.
+    """
+    # --- Construct default production adapters when None ---
+    if storage_port is None:
+        from song_shake.features.enrichment.storage_adapter import TinyDBStorageAdapter
+        storage_port = TinyDBStorageAdapter()
+
+    if audio_downloader is None:
+        from song_shake.features.enrichment.downloader_adapter import YtDlpDownloaderAdapter
+        audio_downloader = YtDlpDownloaderAdapter()
+
+    if song_fetcher is None:
+        from song_shake.features.enrichment.song_adapter import YTMusicSongAdapter
+        song_fetcher = YTMusicSongAdapter()
+
+    if album_fetcher is None:
+        from song_shake.features.enrichment.album_adapter import YTMusicAlbumAdapter
+        album_fetcher = YTMusicAlbumAdapter()
+
+    if audio_enricher is None:
+        load_dotenv()
+        if not api_key:
+            api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            console.print("[red]API Key required for retry.[/red]")
+            return []
+        try:
+            from song_shake.features.enrichment.enricher_adapter import GeminiEnricherAdapter
+            audio_enricher = GeminiEnricherAdapter(api_key=api_key)
+        except Exception as e:
+            console.print(f"[red]Error initializing Gemini client: {e}[/red]")
+            return []
+
+    # --- Fetch failed tracks ---
+    all_failed = storage_port.get_failed_tracks(owner)
+    if video_ids:
+        target_set = set(video_ids)
+        failed_tracks = [t for t in all_failed if t.get("videoId") in target_set]
+    else:
+        failed_tracks = all_failed
+
+    if not failed_tracks:
+        console.print("[yellow]No failed tracks to retry.[/yellow]")
+        return []
+
+    # Cache album metadata
+    album_cache: dict[str, dict] = {}
+
+    def _fetch_album_year(album_browse_id: str | None) -> str | None:
+        if not album_browse_id:
+            return None
+        if album_browse_id in album_cache:
+            return album_cache[album_browse_id].get("year")
+        album_meta = album_fetcher.get_album(album_browse_id)
+        album_cache[album_browse_id] = album_meta
+        return album_meta.get("year")
+
+    def _report(current: int, total: int, message: str,
+                tracker: TokenTracker, track_data: dict | None = None):
+        if on_progress is not None:
+            on_progress({
+                "current": current,
+                "total": total,
+                "message": message,
+                "tokens": tracker.input_tokens + tracker.output_tokens,
+                "cost": tracker.get_cost(),
+                "track_data": track_data,
+            })
+
+    # Create a unique temp directory for this job
+    job_temp_dir = os.path.join(TEMP_DIR_BASE, uuid.uuid4().hex[:12])
+    os.makedirs(job_temp_dir, exist_ok=True)
+
+    try:
+        results: list[dict] = []
+        tracker = TokenTracker()
+        total = len(failed_tracks)
+
+        _report(0, total, f"Retrying {total} failed track(s)…", tracker)
+        console.print(f"Retrying {total} failed track(s)…")
+
+        with Progress() as progress:
+            task = progress.add_task("Retrying failed tracks…", total=total)
+
+            for i, failed in enumerate(failed_tracks):
+                if cancel_check is not None:
+                    cancel_check()
+
+                video_id = failed.get("videoId")
+                title = failed.get("title", "Unknown")
+
+                _report(i, total, f"Retrying: {title}", tracker)
+
+                # --- Re-fetch metadata from ytmusicapi ---
+                song_info = song_fetcher.get_song(video_id)
+                is_music = song_info.get("isMusic", True)
+                playable = song_info.get("playable", True)
+
+                # Detect replaced/gone videos: if ytmusicapi returns a
+                # completely different title, the original video ID was
+                # reassigned to another song on YouTube.
+                fetched_title = song_info.get("title") or ""
+                stored_title = title
+                title_matches = (
+                    fetched_title.strip().lower() == stored_title.strip().lower()
+                )
+                video_replaced = not title_matches and bool(fetched_title)
+
+                if video_replaced:
+                    # Don't trust metadata from get_song — it's for a
+                    # different song. Force a search using stored title+artist.
+                    playable = False  # trigger the search path below
+
+                # Build a track dict — use stored data if video was replaced
+                if video_replaced:
+                    rich_artists = failed.get("artists", [])
+                else:
+                    rich_artists = song_info.get("artists") or failed.get("artists", [])
+                artists_display = ", ".join(
+                    a["name"] for a in rich_artists
+                )
+
+                track = {
+                    "videoId": video_id,
+                    "title": title,
+                    "artists": rich_artists,
+                    "album": (
+                        failed.get("album") if video_replaced
+                        else song_info.get("album") or failed.get("album")
+                    ),
+                    "thumbnails": (
+                        failed.get("thumbnails", []) if video_replaced
+                        else song_info.get("thumbnails") or failed.get("thumbnails", [])
+                    ),
+                }
+
+                play_count = (
+                    failed.get("playCount") if video_replaced
+                    else song_info.get("playCount") or failed.get("playCount")
+                )
+
+                # --- Year ---
+                album_year = None if video_replaced else song_info.get("year")
+                if not album_year:
+                    album_browse_id = (
+                        track.get("album", {}).get("id")
+                        if track.get("album")
+                        else None
+                    )
+                    album_year = _fetch_album_year(album_browse_id)
+
+                if video_replaced:
+                    progress.console.print(
+                        f"[yellow]REPLACED: '{title}' — original video is now "
+                        f"'{fetched_title}'. Searching for correct song…[/yellow]"
+                    )
+                else:
+                    progress.console.print(
+                        f"Retrying: {title} - {artists_display}"
+                    )
+
+                # --- Determine which videoId to download ---
+                download_video_id = video_id
+                playable_video_id = None  # stored for frontend playback
+                if not playable:
+                    if not video_replaced:
+                        progress.console.print(
+                            f"[yellow]UNPLAYABLE: {title} — searching for alternative…[/yellow]"
+                        )
+                    alt_vid = song_fetcher.search_playable_alternative(
+                        title, artists_display
+                    )
+                    if alt_vid:
+                        download_video_id = alt_vid
+                        playable_video_id = alt_vid
+                        progress.console.print(
+                            f"[green]Found alternative: {alt_vid}[/green]"
+                        )
+                        # Re-fetch metadata from the playable alternative
+                        # to get correct album, artists, thumbnails
+                        alt_info = song_fetcher.get_song(alt_vid)
+                        alt_artists = alt_info.get("artists") or rich_artists
+                        alt_album = alt_info.get("album") or track.get("album")
+                        alt_year = alt_info.get("year") or album_year
+                        alt_thumbnails = alt_info.get("thumbnails") or track.get("thumbnails", [])
+                        alt_play_count = alt_info.get("playCount") or play_count
+
+                        # Update the track with correct metadata
+                        track["artists"] = alt_artists
+                        track["album"] = alt_album
+                        track["thumbnails"] = alt_thumbnails
+                        rich_artists = alt_artists
+                        artists_display = ", ".join(
+                            a["name"] for a in rich_artists
+                        )
+                        play_count = alt_play_count
+                        if alt_year:
+                            album_year = alt_year
+                    else:
+                        reason = (
+                            "Video replaced and no alternative found"
+                            if video_replaced
+                            else "UNPLAYABLE and no alternative found"
+                        )
+                        progress.console.print(
+                            f"[red]No playable alternative found for {title}[/red]"
+                        )
+                        tracker.failed += 1
+                        err_metadata = {
+                            "genres": [], "moods": [], "instruments": [],
+                            "bpm": None,
+                            "error": reason,
+                        }
+                        err_track_data = _build_track_data(
+                            video_id, title, track, owner, err_metadata,
+                            is_music=is_music, album_year=album_year,
+                            play_count=play_count,
+                        )
+                        storage_port.save_track(err_track_data)
+                        results.append(err_track_data)
+                        _report(i, total, f"Failed: {title}", tracker, err_track_data)
+                        progress.advance(task)
+                        continue
+
+                # --- Download & enrich ---
+                try:
+                    filename = audio_downloader.download(
+                        download_video_id, job_temp_dir
+                    )
+                    metadata = audio_enricher.enrich(
+                        filename, title, artists_display,
+                    )
+
+                    usage_meta = metadata.pop("usage_metadata", None)
+                    tracker.add_usage_from_dict(usage_meta)
+
+                    is_error = bool(metadata.get("error"))
+                    if is_error:
+                        tracker.failed += 1
+                    else:
+                        tracker.successful += 1
+
+                    if os.path.exists(filename):
+                        os.remove(filename)
+
+                    track_data = _build_track_data(
+                        video_id, title, track, owner, metadata,
+                        is_music=is_music, album_year=album_year,
+                        play_count=play_count,
+                        playable_video_id=playable_video_id,
+                    )
+
+                    storage_port.save_track(track_data)
+                    results.append(track_data)
+                    _report(i, total, f"Retried: {title}", tracker, track_data)
+
+                except Exception as e:
+                    console.print(f"[red]Retry failed for {title}: {e}[/red]")
+                    tracker.failed += 1
+                    err_metadata = {
+                        "genres": [], "moods": [], "instruments": [],
+                        "bpm": None, "error": str(e),
+                    }
+                    err_track_data = _build_track_data(
+                        video_id, title, track, owner, err_metadata,
+                        is_music=is_music, album_year=album_year,
+                        play_count=play_count,
+                    )
+                    storage_port.save_track(err_track_data)
+                    results.append(err_track_data)
+                    _report(i, total, f"Error: {title}", tracker, err_track_data)
+
+                progress.advance(task)
+
+        _report(total, total, "Retry complete", tracker)
+        console.print(f"[green]Retry done! Processed {len(results)} tracks.[/green]")
+        tracker.print_summary()
+        return results
+
+    finally:
         if os.path.exists(job_temp_dir):
             try:
                 shutil.rmtree(job_temp_dir, ignore_errors=True)

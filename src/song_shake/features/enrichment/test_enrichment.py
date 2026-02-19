@@ -6,6 +6,7 @@ from song_shake.features.enrichment.enrichment import (
     TokenTracker,
     _build_track_data,
     process_playlist,
+    retry_failed_tracks,
 )
 
 
@@ -50,6 +51,12 @@ class FakeStorage:
 
     def get_enrichment_history(self, owner: str) -> dict:
         return {}
+
+    def get_failed_tracks(self, owner: str) -> list[dict]:
+        return [
+            t for t in self._tracks.values()
+            if t.get("status") == "error" and t.get("owner") == owner
+        ]
 
 
 class FakePlaylistFetcher:
@@ -122,18 +129,36 @@ class FakeEnricherError:
 class FakeSongFetcher:
     """Returns pre-configured song metadata."""
 
-    def __init__(self, is_music: bool = True):
+    def __init__(
+        self,
+        is_music: bool = True,
+        playable: bool = True,
+        title_map: dict[str, str] | None = None,
+    ):
         self._is_music = is_music
+        self._playable = playable
+        # Maps video_id → title. When set, get_song returns the mapped title.
+        # Use to simulate replaced/gone videos (title mismatch).
+        self._title_map = title_map or {}
 
     def get_song(self, video_id: str) -> dict:
+        # Return mapped title if available, else a generic matching title
+        title = self._title_map.get(video_id)
         return {
+            "title": title,
             "isMusic": self._is_music,
             "artists": [{"name": "Test Artist", "id": "UC_test"}],
             "album": {"name": "Test Album", "id": "MPRE_test"},
             "year": "2024",
             "playCount": "3.5M",
             "channelId": "UC_test",
+            "playable": self._playable,
         }
+
+    def search_playable_alternative(
+        self, title: str, artist: str
+    ) -> str | None:
+        return "ALT_VIDEO_ID" if not self._playable else None
 
 
 class FakeAlbumFetcher:
@@ -547,3 +572,192 @@ class TestProcessPlaylist:
         # Final progress call should reflect accumulated tokens
         final = progress_calls[-1]
         assert final["tokens"] == (500 + 200) * 2  # 2 tracks × 700 tokens each
+
+
+# ---------------------------------------------------------------------------
+# retry_failed_tracks tests
+# ---------------------------------------------------------------------------
+
+class TestRetryFailedTracks:
+    """Tests for the retry_failed_tracks function."""
+
+    def _make_failed_track(self, video_id: str, title: str, owner: str = "user") -> dict:
+        """Create a minimal error-status track dict for testing."""
+        return {
+            "videoId": video_id,
+            "title": title,
+            "artists": [{"name": "Artist", "id": ""}],
+            "album": {"name": "Album", "id": "MPRE_album"},
+            "status": "error",
+            "error_message": "Download failed",
+            "owner": owner,
+            "genres": [],
+            "moods": [],
+            "instruments": [],
+            "bpm": None,
+        }
+
+    def test_retry_happy_path(self):
+        """Two failed tracks should be retried and updated in storage."""
+        t1 = self._make_failed_track("v1", "Track 1")
+        t2 = self._make_failed_track("v2", "Track 2")
+        storage = FakeStorage({"v1": t1, "v2": t2})
+
+        result = retry_failed_tracks(
+            owner="user",
+            storage_port=storage,
+            audio_downloader=FakeDownloader(),
+            audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
+        )
+
+        assert len(result) == 2
+        for r in result:
+            assert r["status"] == "success"
+            assert r["genres"] == ["Pop"]
+
+        assert storage._tracks["v1"]["status"] == "success"
+        assert storage._tracks["v2"]["status"] == "success"
+
+    def test_retry_unplayable_fallback(self):
+        """UNPLAYABLE track should use search_playable_alternative."""
+        t1 = self._make_failed_track("v1", "Unavailable Song")
+        storage = FakeStorage({"v1": t1})
+        downloader = FakeDownloader()
+
+        result = retry_failed_tracks(
+            owner="user",
+            storage_port=storage,
+            audio_downloader=downloader,
+            audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(playable=False),
+            album_fetcher=FakeAlbumFetcher(),
+        )
+
+        assert len(result) == 1
+        assert result[0]["status"] == "success"
+        # Downloader should use alternative videoId
+        assert downloader.calls == ["ALT_VIDEO_ID"]
+        # Storage should keep original videoId
+        assert storage._tracks["v1"]["videoId"] == "v1"
+
+    def test_retry_partial_failure(self):
+        """One succeeds, one fails again — both get updated."""
+        t1 = self._make_failed_track("v1", "Good Track")
+        t2 = self._make_failed_track("v2", "Bad Track")
+        storage = FakeStorage({"v1": t1, "v2": t2})
+
+        class SelectiveDownloader:
+            def __init__(self):
+                self.calls = []
+
+            def download(self, video_id, output_dir):
+                self.calls.append(video_id)
+                if video_id == "v2":
+                    raise RuntimeError("Download failed again")
+                return f"{output_dir}/{video_id}.mp3"
+
+        result = retry_failed_tracks(
+            owner="user",
+            storage_port=storage,
+            audio_downloader=SelectiveDownloader(),
+            audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
+        )
+
+        assert len(result) == 2
+        assert storage._tracks["v1"]["status"] == "success"
+        assert storage._tracks["v2"]["status"] == "error"
+
+    def test_retry_no_failed_tracks(self):
+        """No failed tracks should return empty list."""
+        storage = FakeStorage({
+            "v1": {"videoId": "v1", "status": "success", "owner": "user"},
+        })
+
+        result = retry_failed_tracks(
+            owner="user",
+            storage_port=storage,
+            audio_downloader=FakeDownloader(),
+            audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
+        )
+
+        assert result == []
+
+    def test_retry_specific_video_ids(self):
+        """Passing video_ids should only retry those specific tracks."""
+        t1 = self._make_failed_track("v1", "Track 1")
+        t2 = self._make_failed_track("v2", "Track 2")
+        storage = FakeStorage({"v1": t1, "v2": t2})
+
+        result = retry_failed_tracks(
+            owner="user",
+            video_ids=["v1"],
+            storage_port=storage,
+            audio_downloader=FakeDownloader(),
+            audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
+        )
+
+        assert len(result) == 1
+        assert result[0]["videoId"] == "v1"
+        assert storage._tracks["v1"]["status"] == "success"
+        assert storage._tracks["v2"]["status"] == "error"
+
+    def test_retry_progress_callback(self):
+        """on_progress should be called during retry."""
+        t1 = self._make_failed_track("v1", "Track 1")
+        storage = FakeStorage({"v1": t1})
+        progress_data = []
+
+        retry_failed_tracks(
+            owner="user",
+            on_progress=lambda p: progress_data.append(p),
+            storage_port=storage,
+            audio_downloader=FakeDownloader(),
+            audio_enricher=FakeEnricher(),
+            song_fetcher=FakeSongFetcher(),
+            album_fetcher=FakeAlbumFetcher(),
+        )
+
+        assert len(progress_data) >= 2  # At least start + end
+        assert progress_data[-1]["message"] == "Retry complete"
+
+    def test_retry_video_replaced(self):
+        """Video replaced on YouTube should detect title mismatch and search."""
+        t1 = self._make_failed_track("v1", "Time Goes By")
+        storage = FakeStorage({"v1": t1})
+        downloader = FakeDownloader()
+
+        # get_song("v1") returns a DIFFERENT title → video was replaced.
+        # get_song("ALT_VIDEO_ID") returns correct metadata for the alt.
+        fetcher = FakeSongFetcher(
+            playable=False,
+            title_map={
+                "v1": "Completely Different Song",
+                "ALT_VIDEO_ID": "Time Goes By",
+            },
+        )
+
+        result = retry_failed_tracks(
+            owner="user",
+            storage_port=storage,
+            audio_downloader=downloader,
+            audio_enricher=FakeEnricher(),
+            song_fetcher=fetcher,
+            album_fetcher=FakeAlbumFetcher(),
+        )
+
+        assert len(result) == 1
+        assert result[0]["status"] == "success"
+        # Should download from the alternative, not the replaced original
+        assert downloader.calls == ["ALT_VIDEO_ID"]
+        # Title should remain the stored original
+        assert result[0]["title"] == "Time Goes By"
+        # Metadata should come from the alternative video
+        assert storage._tracks["v1"]["playableVideoId"] == "ALT_VIDEO_ID"

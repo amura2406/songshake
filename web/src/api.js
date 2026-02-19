@@ -167,4 +167,9 @@ export const getAIUsageStreamUrl = () => {
   return `/api/jobs/ai-usage/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 };
 
+export const retrySong = async (videoId) => {
+  const res = await api.post(`/api/jobs/retry/${encodeURIComponent(videoId)}`, {});
+  return res.data;
+};
+
 export default api;

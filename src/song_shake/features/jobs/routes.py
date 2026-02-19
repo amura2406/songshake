@@ -109,6 +109,97 @@ def list_jobs(user: dict = Depends(get_current_user), status: str | None = None)
 
 
 # ---------------------------------------------------------------------------
+# Retry endpoints — MUST be registered BEFORE /{job_id} wildcard routes
+# ---------------------------------------------------------------------------
+
+
+class RetryRequest(BaseModel):
+    """Payload for retrying failed tracks."""
+
+    api_key: Optional[str] = None
+
+
+@router.post("/retry", response_model=JobResponse)
+def retry_failed(
+    request: RetryRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    """Retry enrichment for all failed tracks."""
+    api_key = (
+        request.api_key
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+    )
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API Key required")
+
+    owner = user["sub"]
+    job_id = f"retry_{owner}_{os.urandom(4).hex()}"
+
+    job = job_storage.check_and_create_job(
+        playlist_id=f"retry_{owner}",
+        owner=owner,
+        job_id=job_id,
+        job_type=JobType.RETRY,
+        playlist_name="Retry Failed Tracks",
+    )
+    if job is None:
+        raise HTTPException(
+            status_code=409,
+            detail="A retry job is already running",
+        )
+
+    logger.info("retry_job_created", job_id=job_id, owner=owner)
+    background_tasks.add_task(logic.run_retry_job, job_id, owner, api_key)
+    return job
+
+
+@router.post("/retry/{video_id}", response_model=JobResponse)
+def retry_single_track(
+    video_id: str,
+    request: RetryRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    """Retry enrichment for a single track by videoId."""
+    api_key = (
+        request.api_key
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+    )
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API Key required")
+
+    owner = user["sub"]
+    job_id = f"retry_{video_id}_{os.urandom(4).hex()}"
+
+    job = job_storage.check_and_create_job(
+        playlist_id=f"retry_{video_id}",
+        owner=owner,
+        job_id=job_id,
+        job_type=JobType.RETRY,
+        playlist_name=f"Retry: {video_id}",
+    )
+    if job is None:
+        raise HTTPException(
+            status_code=409,
+            detail="A retry job for this track is already running",
+        )
+
+    logger.info(
+        "single_retry_job_created",
+        job_id=job_id,
+        video_id=video_id,
+        owner=owner,
+    )
+    background_tasks.add_task(
+        logic.run_retry_job, job_id, owner, api_key, [video_id]
+    )
+    return job
+
+
+# ---------------------------------------------------------------------------
 # AI Usage endpoints — MUST be registered BEFORE /{job_id} wildcard routes
 # to prevent FastAPI from matching "ai-usage" as a job_id.
 # ---------------------------------------------------------------------------

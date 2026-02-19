@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.9.0)
+# Song Shake (v0.10.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
 
@@ -27,6 +27,7 @@ This tool takes your YouTube Music playlists and enriches them with **Genres**, 
 -   **Persistent Storage**: Saves enriched data to a local `songs.db` (TinyDB) with a dual-table deduplication architecture:
     -   `songs`: A global catalog storing processed tracks to avoid redundant LLM analysis across users.
     -   `user_songs`: A relational table linking individual users to specific tracks in the global catalog.
+-   **Retry Failed Tracks (New!)**: Per-track retry button for songs that failed enrichment. Handles UNPLAYABLE videos (auto-searches for playable alternative), replaced/gone video IDs (detects title mismatch and falls back to search), and transient errors. Metadata is re-fetched from the correct source.
 -   **Resilient Processing**: Tracks that fail to enrich are still saved and visually flagged, ensuring complete playlist visibility.
 -   **Cost Tracking**: Tracks Gemini API token usage and estimated cost in real-time during enrichment.
 -   **Smart Filtering**: Filter by specific Genres, Moods, Instruments, or Enrichment Status directly on the Results page. Filter by BPM range as well.

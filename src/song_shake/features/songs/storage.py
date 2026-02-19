@@ -100,6 +100,28 @@ def get_all_tracks(db: TinyDB = None, owner: str = 'local') -> list:
 
         return user_songs
 
+def get_failed_tracks(db: TinyDB = None, owner: str = 'local') -> list:
+    """Get all error-status tracks from database for a specific owner."""
+    with _db_lock:
+        if db is None:
+            db = init_db()
+
+        songs_table = db.table('songs')
+        user_songs_table = db.table('user_songs')
+        UserSong = Query()
+        Song = Query()
+
+        # Get all videoIds linked to this owner
+        user_links = user_songs_table.search(UserSong.owner == owner)
+        video_ids = [link.get('videoId') for link in user_links if link.get('videoId')]
+
+        if not video_ids:
+            return []
+
+        all_error_songs = songs_table.search(Song.status == 'error')
+        return [s for s in all_error_songs if s.get('videoId') in video_ids]
+
+
 def get_track_by_id(db: TinyDB, video_id: str) -> dict:
     """Check if track exists in the global catalog by videoId."""
     with _db_lock:
