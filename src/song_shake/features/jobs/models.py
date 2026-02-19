@@ -32,7 +32,6 @@ class JobCreateRequest(BaseModel):
     """Payload for creating a new job."""
 
     playlist_id: str
-    owner: str = "web_user"
     api_key: Optional[str] = None
     wipe: bool = False
     playlist_name: str = ""

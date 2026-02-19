@@ -1,27 +1,45 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { checkAuth } from '../../api';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { checkAuth, setToken, getToken } from '../../api';
 // eslint-disable-next-line no-unused-vars
 import { motion } from 'framer-motion';
 import logoImg from '../../assets/logo.png';
 
 const Login = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // On mount, check if already authenticated
+  // On mount: extract JWT from URL (if OAuth callback) or check existing token
   React.useEffect(() => {
-    checkAuth().then(user => {
-      if (user) navigate('/');
-    }).catch(() => { });
-  }, [navigate]);
+    const token = searchParams.get('token');
+    const expired = searchParams.get('expired');
+
+    if (expired) {
+      setError('Your session has expired. Please sign in again.');
+    }
+
+    if (token) {
+      // Store JWT from OAuth callback and redirect to dashboard
+      setToken(token);
+      navigate('/', { replace: true });
+      return;
+    }
+
+    // Check if already authenticated
+    if (getToken()) {
+      checkAuth().then(isAuth => {
+        if (isAuth) navigate('/', { replace: true });
+      }).catch(() => { });
+    }
+  }, [navigate, searchParams]);
 
   const handleGoogleLogin = () => {
     setLoading(true);
     setError('');
-    // Redirect to backend OAuth endpoint — if backend is down, redirect will fail
-    window.location.href = 'http://localhost:8000/auth/google/login';
+    // Use relative URL — Vite proxy handles /auth routes
+    window.location.href = '/auth/google/login';
   };
 
   return (

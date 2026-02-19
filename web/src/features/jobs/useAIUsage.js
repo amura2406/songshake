@@ -6,7 +6,7 @@ import { getAIUsage, getAIUsageStreamUrl } from '../../api';
  * Returns { inputTokens, outputTokens, cost, glowing }.
  * `glowing` is true briefly whenever values update.
  */
-export const useAIUsage = (owner = 'web_user') => {
+export const useAIUsage = () => {
     const [usage, setUsage] = useState({ inputTokens: 0, outputTokens: 0, cost: 0.0 });
     const [glowing, setGlowing] = useState(false);
     const glowTimerRef = useRef(null);
@@ -24,7 +24,7 @@ export const useAIUsage = (owner = 'web_user') => {
     useEffect(() => {
         const fetchInitial = async () => {
             try {
-                const data = await getAIUsage(owner);
+                const data = await getAIUsage();
                 setUsage({
                     inputTokens: data.input_tokens || 0,
                     outputTokens: data.output_tokens || 0,
@@ -35,7 +35,7 @@ export const useAIUsage = (owner = 'web_user') => {
             }
         };
         fetchInitial();
-    }, [owner]);
+    }, []);
 
     // SSE stream with automatic reconnection
     useEffect(() => {
@@ -44,7 +44,7 @@ export const useAIUsage = (owner = 'web_user') => {
         const connect = () => {
             if (closed) return;
 
-            const url = getAIUsageStreamUrl(owner);
+            const url = getAIUsageStreamUrl();
             const es = new EventSource(url);
             esRef.current = es;
 
@@ -86,7 +86,7 @@ export const useAIUsage = (owner = 'web_user') => {
             clearTimeout(reconnectTimerRef.current);
             clearTimeout(glowTimerRef.current);
         };
-    }, [owner, triggerGlow]);
+    }, [triggerGlow]);
 
     return { ...usage, glowing };
 };

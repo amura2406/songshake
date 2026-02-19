@@ -8,10 +8,11 @@ import json
 import os
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from song_shake.features.auth.dependencies import get_current_user
 from song_shake.features.jobs import logic, storage as job_storage
 from song_shake.features.jobs.models import (
     AIUsageResponse,
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
 @router.post("", response_model=JobResponse)
-def create_job(request: JobCreateRequest, background_tasks: BackgroundTasks):
+def create_job(request: JobCreateRequest, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     api_key = (
         request.api_key
         or os.getenv("GOOGLE_API_KEY")
@@ -43,12 +44,13 @@ def create_job(request: JobCreateRequest, background_tasks: BackgroundTasks):
     if not api_key:
         raise HTTPException(status_code=400, detail="API Key required")
 
+    owner = user["sub"]
     job_id = f"job_{request.playlist_id}_{os.urandom(4).hex()}"
 
     # Atomic check-and-create prevents TOCTOU race between duplicate check and insert
     job = job_storage.check_and_create_job(
         playlist_id=request.playlist_id,
-        owner=request.owner,
+        owner=owner,
         job_id=job_id,
         job_type=JobType.ENRICHMENT,
         playlist_name=request.playlist_name,
@@ -63,14 +65,14 @@ def create_job(request: JobCreateRequest, background_tasks: BackgroundTasks):
         "job_created",
         job_id=job_id,
         playlist_id=request.playlist_id,
-        owner=request.owner,
+        owner=owner,
     )
 
     background_tasks.add_task(
         logic.run_enrichment_job,
         job_id,
         request.playlist_id,
-        request.owner,
+        owner,
         api_key,
         request.wipe,
     )
@@ -83,13 +85,9 @@ def create_job(request: JobCreateRequest, background_tasks: BackgroundTasks):
 # ---------------------------------------------------------------------------
 
 
-class JobListParams(BaseModel):
-    status: Optional[str] = None  # "active" | "history"
-    owner: Optional[str] = None
-
-
 @router.get("")
-def list_jobs(status: str | None = None, owner: str | None = None):
+def list_jobs(user: dict = Depends(get_current_user), status: str | None = None):
+    owner = user["sub"]
     if status == "active":
         jobs = job_storage.get_active_jobs(owner)
         # Enrich with live state
@@ -117,13 +115,14 @@ def list_jobs(status: str | None = None, owner: str | None = None):
 
 
 @router.get("/ai-usage/current")
-async def get_ai_usage(owner: str = "web_user"):
-    usage = await asyncio.to_thread(job_storage.get_ai_usage, owner)
+async def get_ai_usage(user: dict = Depends(get_current_user)):
+    usage = await asyncio.to_thread(job_storage.get_ai_usage, user["sub"])
     return usage
 
 
 @router.get("/ai-usage/stream")
-async def stream_ai_usage(owner: str = "web_user"):
+async def stream_ai_usage(user: dict = Depends(get_current_user)):
+    owner = user["sub"]
     async def event_generator():
         last_hash = ""
         while True:
@@ -152,7 +151,7 @@ async def stream_ai_usage(owner: str = "web_user"):
 
 
 @router.get("/{job_id}")
-def get_job(job_id: str):
+def get_job(job_id: str, user: dict = Depends(get_current_user)):
     # Live state first (fast reads for active jobs)
     live = logic.get_live_state(job_id)
     if live:
@@ -171,7 +170,7 @@ def get_job(job_id: str):
 
 
 @router.post("/{job_id}/cancel")
-def cancel_job(job_id: str):
+def cancel_job(job_id: str, user: dict = Depends(get_current_user)):
     event = logic.get_cancel_event(job_id)
     if event:
         # Normal case: job is running in-memory, signal cancellation
@@ -203,7 +202,7 @@ def cancel_job(job_id: str):
 
 
 @router.get("/{job_id}/stream")
-async def stream_job(job_id: str):
+async def stream_job(job_id: str, user: dict = Depends(get_current_user)):
     # Must exist in live state or DB
     live = await asyncio.to_thread(logic.get_live_state, job_id)
     persisted = await asyncio.to_thread(job_storage.get_job, job_id) if not live else None

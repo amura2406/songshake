@@ -6,10 +6,11 @@ import os
 from typing import Any, Dict, Optional
 
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from song_shake.features.auth.dependencies import get_current_user
 from song_shake.features.enrichment import enrichment
 from song_shake.features.songs import storage
 from song_shake.platform.logging_config import get_logger
@@ -34,7 +35,6 @@ def _persist_task(task_id: str) -> None:
 
 class EnrichmentRequest(BaseModel):
     playlist_id: str
-    owner: str = "web_user"
     api_key: Optional[str] = None
 
 
@@ -89,7 +89,7 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
 # --- Routes ---
 
 @router.post("")
-def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTasks):
+def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
 
     api_key = (
         request.api_key
@@ -110,7 +110,7 @@ def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTas
     _persist_task(task_id)
 
     background_tasks.add_task(
-        process_enrichment, task_id, request.playlist_id, request.owner, api_key
+        process_enrichment, task_id, request.playlist_id, user["sub"], api_key
     )
     return {"task_id": task_id}
 

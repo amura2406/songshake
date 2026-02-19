@@ -132,6 +132,176 @@
     }
 }
 
+/* ── Album art overlay (circular) ────────────────────────── */
+.album-art-wrapper {
+    display: inline-block;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 9999px;
+    overflow: hidden;
+}
+
+.album-art-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+/* Hover-to-reveal play for non-current tracks */
+.album-art-overlay--playable {
+    opacity: 0;
+    background: rgba(0, 0, 0, 0.55);
+    color: white;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+}
+
+.album-art-wrapper:hover .album-art-overlay--playable {
+    opacity: 1;
+}
+
+/* Always-visible overlay for currently playing track */
+.album-art-overlay--playing {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+}
+
+.album-art-overlay--playing.is-playing {
+    box-shadow: 0 0 12px 2px rgba(175, 37, 244, 0.45);
+}
+
+.album-art-overlay--blocked {
+    opacity: 0.5;
+    background: rgba(0, 0, 0, 0.5);
+    color: rgba(251, 191, 36, 0.8);
+    pointer-events: none;
+}
+
+.album-art-wrapper:hover .album-art-overlay--blocked {
+    opacity: 0.7;
+}
+
+/* ── Fixed status bar ────────────────────────────────────── */
+.status-bar {
+    position: fixed;
+    bottom: 0;
+    left: 16rem;
+    /* clear sidebar (w-64) */
+    right: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 3fr) minmax(0, 1fr);
+    align-items: center;
+    height: 3rem;
+    padding: 0 1rem;
+    border-top: 1px solid rgba(175, 37, 244, 0.12);
+    background: rgba(21, 11, 26, 0.92);
+    backdrop-filter: blur(16px);
+}
+
+@media (max-width: 767px) {
+    .status-bar {
+        left: 0;
+    }
+}
+
+.status-bar__left {
+    display: flex;
+    align-items: center;
+}
+
+.status-bar__center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    position: relative;
+}
+
+.status-bar__right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.375rem;
+}
+
+/* ── Status bar player controls ──────────────────────────── */
+.status-bar__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 9999px;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.status-bar__btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+.status-bar__time {
+    font-size: 0.625rem;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    color: rgba(255, 255, 255, 0.4);
+    min-width: 2.25rem;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.status-bar__seek {
+    flex: 1;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    max-width: 50%;
+}
+
+.status-bar__seek-bg {
+    width: 100%;
+    height: 3px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.1);
+    position: relative;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.status-bar__seek-fill {
+    position: absolute;
+    inset: 0;
+    right: auto;
+    background: #af25f4;
+    border-radius: 9999px;
+    transition: width 0.25s linear;
+}
+
+.status-bar__seek:hover .status-bar__seek-bg {
+    height: 5px;
+}
+
+.status-bar__seek:hover .status-bar__seek-fill {
+    background: #c764f7;
+    box-shadow: 0 0 8px rgba(175, 37, 244, 0.7);
+}
+
 /* ── Legacy utilities ────────────────────────────────────── */
 .text-gradient {
     background: linear-gradient(to right, #af25f4, #d946ef);

@@ -54,6 +54,7 @@ class YTMusicSongAdapter:
             - album: {name, id} | None
             - year: str | None
             - playCount: str | None  (formatted: "3.5M", "123K")
+            - thumbnails: list[{url, width, height}]
             - channelId: str
         """
         # 1. Rich metadata from watch playlist (artists, album, year)
@@ -69,6 +70,7 @@ class YTMusicSongAdapter:
         year = watch_data.get("year") or song_data.get("year")
         is_music = song_data.get("isMusic", watch_data.get("isMusic", True))
         play_count = song_data.get("playCount")
+        thumbnails = song_data.get("thumbnails") or []
         channel_id = (
             (artists[0]["id"] if artists and artists[0].get("id") else "")
             or song_data.get("channelId", "")
@@ -80,6 +82,7 @@ class YTMusicSongAdapter:
             "album": album,
             "year": str(year) if year else None,
             "playCount": play_count,
+            "thumbnails": thumbnails,
             "channelId": channel_id,
         }
 
@@ -127,12 +130,20 @@ class YTMusicSongAdapter:
 
             author = vd.get("author", "").removesuffix(" - Topic").strip()
 
+            # Extract square album art thumbnails
+            raw_thumbs = vd.get("thumbnail", {}).get("thumbnails", [])
+            thumbnails = [
+                {"url": t["url"], "width": t.get("width"), "height": t.get("height")}
+                for t in raw_thumbs if t.get("url")
+            ]
+
             return {
                 "isMusic": mvt in MUSIC_VIDEO_TYPES if mvt else False,
                 "artists": [{"name": author, "id": vd.get("channelId", "")}] if author else [],
                 "album": None,
                 "year": None,
                 "playCount": play_count,
+                "thumbnails": thumbnails,
                 "channelId": vd.get("channelId", ""),
             }
         except Exception as e:
@@ -143,5 +154,6 @@ class YTMusicSongAdapter:
                 "album": None,
                 "year": None,
                 "playCount": None,
+                "thumbnails": [],
                 "channelId": "",
             }

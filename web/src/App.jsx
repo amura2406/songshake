@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { checkAuth, getCurrentUser } from './api';
+import { checkAuth, getCurrentUser, getToken, clearToken } from './api';
 import Login from './features/auth/Login';
 import Dashboard from './features/enrichment/Dashboard';
 import Results from './features/songs/Results';
@@ -14,6 +14,11 @@ const PrivateRoute = ({ children }) => {
 
   useEffect(() => {
     const verify = async () => {
+      // Quick check: no JWT means not authenticated
+      if (!getToken()) {
+        setIsAuthenticated(false);
+        return;
+      }
       const auth = await checkAuth();
       setIsAuthenticated(auth);
       if (auth) {
@@ -23,6 +28,8 @@ const PrivateRoute = ({ children }) => {
         } catch (e) {
           console.error('Failed to get user', e);
         }
+      } else {
+        clearToken();
       }
     };
     verify();

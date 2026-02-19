@@ -1,211 +1,203 @@
-"""Unit tests for auth route handlers."""
+"""Unit tests for auth route handlers (JWT-based)."""
 
-import json
-from unittest.mock import MagicMock, mock_open, patch
+import os
+from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from song_shake.api import app
+from song_shake.features.auth import jwt as app_jwt
+from song_shake.features.auth.dependencies import get_current_user
 
 client = TestClient(app)
 
+FAKE_USER = {"sub": "test_user_123", "name": "Test User", "thumb": None}
 
-# --- logout tests ---
+
+@pytest.fixture(autouse=True)
+def _cleanup():
+    """Clear dependency overrides after each test."""
+    yield
+    app.dependency_overrides.clear()
 
 
-class TestLogout:
-    """Tests for GET /auth/logout."""
+def _make_jwt(claims=None):
+    """Create a valid JWT for testing."""
+    payload = claims or FAKE_USER
+    return app_jwt.create_access_token(
+        user_id=payload["sub"],
+        name=payload.get("name", "Test"),
+        thumbnail=payload.get("thumb"),
+    )
 
-    @patch("song_shake.features.auth.routes.os.remove")
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_removes_oauth_file(self, mock_exists, mock_remove):
-        """Should remove oauth.json when it exists."""
-        mock_exists.return_value = True
 
-        response = client.get("/auth/logout")
+# --- auth/me tests ---
+
+
+class TestAuthMe:
+    """Tests for GET /auth/me."""
+
+    def test_returns_user_profile_with_valid_jwt(self):
+        """Should return user profile from JWT claims."""
+        token = _make_jwt()
+        response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
 
         assert response.status_code == 200
-        assert response.json()["status"] == "logged_out"
-        mock_remove.assert_called_once_with("oauth.json")
+        data = response.json()
+        assert data["id"] == "test_user_123"
+        assert data["name"] == "Test User"
+        assert data["authenticated"] is True
 
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_handles_missing_file(self, mock_exists):
-        """Should succeed even when oauth.json doesn't exist."""
-        mock_exists.return_value = False
+    def test_returns_401_without_token(self):
+        """Should return 401 when no token is provided."""
+        response = client.get("/auth/me")
+        assert response.status_code == 401
 
-        response = client.get("/auth/logout")
+    def test_returns_401_with_invalid_token(self):
+        """Should return 401 when token is invalid."""
+        response = client.get("/auth/me", headers={"Authorization": "Bearer invalid.token.here"})
+        assert response.status_code == 401
 
-        assert response.status_code == 200
-        assert response.json()["status"] == "logged_out"
+    def test_returns_401_with_expired_token(self):
+        """Should return 401 when token has expired."""
+        import jwt
+        import time
+
+        token = jwt.encode(
+            {"sub": "user", "name": "Test", "exp": int(time.time()) - 3600},
+            app_jwt._get_secret(),
+            algorithm="HS256",
+        )
+        response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
 
 
-# --- auth_status tests ---
+# --- auth/status tests ---
 
 
 class TestAuthStatus:
     """Tests for GET /auth/status."""
 
-    @patch("song_shake.features.auth.routes._is_token_valid")
-    def test_returns_authenticated_when_valid(self, mock_valid):
-        """Should return authenticated=True when token is valid."""
-        mock_valid.return_value = True
-
-        response = client.get("/auth/status")
+    def test_returns_authenticated_with_valid_jwt(self):
+        """Should return authenticated=True with valid JWT."""
+        token = _make_jwt()
+        response = client.get("/auth/status", headers={"Authorization": f"Bearer {token}"})
 
         assert response.status_code == 200
         assert response.json()["authenticated"] is True
 
-    @patch("song_shake.features.auth.routes._is_token_valid")
-    def test_returns_not_authenticated_when_invalid(self, mock_valid):
-        """Should return authenticated=False when token is invalid."""
-        mock_valid.return_value = False
-
+    def test_returns_not_authenticated_without_token(self):
+        """Should return authenticated=False without JWT (no 401)."""
         response = client.get("/auth/status")
 
         assert response.status_code == 200
         assert response.json()["authenticated"] is False
 
-
-# --- _is_token_valid tests ---
-
-
-class TestIsTokenValid:
-    """Tests for _is_token_valid() helper."""
-
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_returns_false_when_no_file(self, mock_exists):
-        """Should return False when oauth.json doesn't exist."""
-        mock_exists.return_value = False
-
-        from song_shake.features.auth.routes import _is_token_valid
-
-        assert _is_token_valid() is False
-
-    @patch("builtins.open", mock_open(read_data='{"access_token": "tok", "expires_at": 9999999999}'))
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_returns_true_for_valid_token(self, mock_exists):
-        """Should return True when token exists and is not expired."""
-        mock_exists.return_value = True
-
-        from song_shake.features.auth.routes import _is_token_valid
-
-        assert _is_token_valid() is True
-
-    @patch("builtins.open", mock_open(read_data='{"access_token": "tok", "expires_at": 1}'))
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_returns_false_for_expired_token(self, mock_exists):
-        """Should return False when token is expired."""
-        mock_exists.return_value = True
-
-        from song_shake.features.auth.routes import _is_token_valid
-
-        assert _is_token_valid() is False
-
-    @patch("builtins.open", mock_open(read_data="invalid json"))
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_returns_false_for_corrupt_file(self, mock_exists):
-        """Should return False when file contains invalid JSON."""
-        mock_exists.return_value = True
-
-        from song_shake.features.auth.routes import _is_token_valid
-
-        assert _is_token_valid() is False
-
-
-# --- get_current_user tests ---
-
-
-class TestGetCurrentUser:
-    """Tests for GET /auth/me."""
-
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_returns_401_when_no_oauth_file(self, mock_exists):
-        """Should return 401 when oauth.json doesn't exist."""
-        mock_exists.return_value = False
-
-        response = client.get("/auth/me")
-
-        assert response.status_code == 401
-
-    @patch("song_shake.features.auth.routes.requests.get")
-    @patch(
-        "builtins.open",
-        mock_open(read_data='{"access_token": "test-token"}'),
-    )
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_returns_user_from_channel_info(self, mock_exists, mock_get):
-        """Should return user info from YouTube Channel API."""
-        mock_exists.return_value = True
-
-        channel_response = MagicMock()
-        channel_response.status_code = 200
-        channel_response.json.return_value = {
-            "items": [
-                {
-                    "id": "UC123",
-                    "snippet": {
-                        "title": "Test User",
-                        "thumbnails": {"default": {"url": "https://img.com/pic.jpg"}},
-                    },
-                }
-            ]
-        }
-        mock_get.return_value = channel_response
-
-        response = client.get("/auth/me")
+    def test_returns_not_authenticated_with_bad_token(self):
+        """Should return authenticated=False with invalid JWT."""
+        response = client.get("/auth/status", headers={"Authorization": "Bearer bad.token"})
 
         assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == "UC123"
-        assert data["name"] == "Test User"
-        assert data["authenticated"] is True
+        assert response.json()["authenticated"] is False
 
-    @patch("song_shake.features.auth.routes.requests.get")
-    @patch(
-        "builtins.open",
-        mock_open(read_data='{"access_token": "test-token"}'),
-    )
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_falls_back_to_userinfo(self, mock_exists, mock_get):
-        """Should fall back to userinfo endpoint when channel API returns no items."""
-        mock_exists.return_value = True
 
-        channel_response = MagicMock()
-        channel_response.status_code = 200
-        channel_response.json.return_value = {"items": []}
+# --- auth/logout tests ---
 
-        userinfo_response = MagicMock()
-        userinfo_response.status_code = 200
-        userinfo_response.json.return_value = {
-            "id": "user@example.com",
-            "name": "Email User",
-            "picture": "https://img.com/email.jpg",
-        }
 
-        mock_get.side_effect = [channel_response, userinfo_response]
+class TestLogout:
+    """Tests for GET /auth/logout."""
 
-        response = client.get("/auth/me")
+    @patch("song_shake.features.auth.routes.token_store.delete_google_tokens")
+    def test_logout_clears_tokens(self, mock_delete):
+        """Should delete stored Google tokens for the user."""
+        token = _make_jwt()
+        response = client.get("/auth/logout", headers={"Authorization": f"Bearer {token}"})
 
         assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "Email User"
-        assert data["authenticated"] is True
+        assert response.json()["status"] == "logged_out"
+        mock_delete.assert_called_once_with("test_user_123")
 
-    @patch(
-        "builtins.open",
-        mock_open(read_data='{}'),
-    )
-    @patch("song_shake.features.auth.routes.os.path.exists")
-    def test_returns_401_when_no_access_token(self, mock_exists):
-        """Should return 401 when access_token is missing from file."""
-        mock_exists.return_value = True
-
-        response = client.get("/auth/me")
-
+    def test_logout_requires_auth(self):
+        """Should return 401 when not authenticated."""
+        response = client.get("/auth/logout")
         assert response.status_code == 401
 
 
+# --- auth/refresh tests ---
 
 
+class TestRefresh:
+    """Tests for GET /auth/refresh."""
+
+    @patch("song_shake.features.auth.routes.token_store.save_google_tokens")
+    @patch("song_shake.features.auth.routes.requests.post")
+    @patch("song_shake.features.auth.routes.token_store.get_google_tokens")
+    def test_refresh_issues_new_jwt(self, mock_get_tokens, mock_post, mock_save):
+        """Should refresh Google tokens and issue a new JWT."""
+        mock_get_tokens.return_value = {
+            "access_token": "old_token",
+            "refresh_token": "valid_refresh",
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "access_token": "new_access",
+            "expires_in": 3600,
+        }
+        mock_post.return_value = mock_resp
+
+        token = _make_jwt()
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "cid", "GOOGLE_CLIENT_SECRET": "csec"}):
+            response = client.get("/auth/refresh", headers={"Authorization": f"Bearer {token}"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "token" in data
+        assert data["refreshed"] is True
+
+    @patch("song_shake.features.auth.routes.token_store.get_google_tokens")
+    def test_refresh_fails_without_stored_tokens(self, mock_get_tokens):
+        """Should return 401 when no stored tokens found."""
+        mock_get_tokens.return_value = None
+
+        token = _make_jwt()
+        response = client.get("/auth/refresh", headers={"Authorization": f"Bearer {token}"})
+
+        assert response.status_code == 401
+
+    def test_refresh_requires_auth(self):
+        """Should return 401 when not authenticated."""
+        response = client.get("/auth/refresh")
+        assert response.status_code == 401
+
+
+# --- Token query param support (for SSE) ---
+
+
+class TestTokenQueryParam:
+    """Tests for query param JWT support (SSE compatibility)."""
+
+    def test_accepts_token_via_query_param(self):
+        """Should authenticate using ?token= query param."""
+        app.dependency_overrides.clear()
+        token = _make_jwt()
+        # Use a protected endpoint that uses get_current_user
+        response = client.get(f"/auth/me?token={token}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == "test_user_123"
+
+    def test_header_takes_precedence_over_query_param(self):
+        """Should prefer Authorization header over query param."""
+        app.dependency_overrides.clear()
+        token = _make_jwt()
+        response = client.get(
+            f"/auth/me?token=invalid.token",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == "test_user_123"

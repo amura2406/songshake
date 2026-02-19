@@ -2,8 +2,8 @@ import React from 'react';
 import { Sparkles } from 'lucide-react';
 import { useAIUsage } from './useAIUsage';
 
-const AIUsageFooter = ({ owner }) => {
-    const { inputTokens, cost, glowing } = useAIUsage(owner || 'web_user');
+const AIUsageFooter = () => {
+    const { inputTokens, cost, glowing } = useAIUsage();
 
     return (
         <div

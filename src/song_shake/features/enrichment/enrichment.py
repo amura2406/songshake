@@ -406,7 +406,7 @@ def process_playlist(
                 song_info = song_fetcher.get_song(video_id)
                 is_music = song_info.get("isMusic", True)
 
-                # Replace track artists/album with richer ytmusicapi data
+                # Replace track artists/album/thumbnails with richer ytmusicapi data
                 rich_artists = song_info.get("artists", [])
                 if rich_artists:
                     track["artists"] = rich_artists
@@ -416,6 +416,9 @@ def process_playlist(
                 rich_album = song_info.get("album")
                 if rich_album:
                     track["album"] = rich_album
+                rich_thumbs = song_info.get("thumbnails")
+                if rich_thumbs:
+                    track["thumbnails"] = rich_thumbs
                 play_count = song_info.get("playCount")
 
                 # --- Year: prefer song_info, fall back to album_fetcher ---

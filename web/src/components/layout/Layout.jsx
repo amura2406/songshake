@@ -259,7 +259,7 @@ const Layout = ({ children }) => {
 
           {/* AI Usage Footer */}
           <div className="p-4 border-t border-white/5 shrink-0">
-            <AIUsageFooter owner={user?.id} />
+            <AIUsageFooter />
           </div>
         </aside>
 

@@ -1,21 +1,43 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getSongs, getCurrentUser, getTags } from '../../api';
+import { getSongs, getTags } from '../../api';
 import YouTube from 'react-youtube';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 
+
+
 /**
- * Format structured artists array to a display string.
- * Handles both new format [{name, id}] and legacy string format.
+ * Return Tailwind color classes for BPM based on tempo grouping.
+ * Slow (≤70), Slow-Med (71-90), Medium (91-110), Med-Fast (111-130), Fast (>130)
  */
-const formatArtists = (artists) => {
-  if (!artists) return 'Unknown';
-  if (typeof artists === 'string') return artists;
-  if (Array.isArray(artists)) {
-    return artists.map(a => a.name || a).join(', ');
-  }
-  return 'Unknown';
+const getBpmColor = (bpm) => {
+  if (!bpm) return { text: 'text-slate-600', dot: 'bg-slate-600' };
+  const n = typeof bpm === 'string' ? parseInt(bpm) : bpm;
+  if (isNaN(n)) return { text: 'text-slate-600', dot: 'bg-slate-600' };
+  if (n <= 70) return { text: 'text-blue-400', dot: 'bg-blue-400' };
+  if (n <= 90) return { text: 'text-cyan-400', dot: 'bg-cyan-400' };
+  if (n <= 110) return { text: 'text-emerald-400', dot: 'bg-emerald-400' };
+  if (n <= 130) return { text: 'text-amber-400', dot: 'bg-amber-400' };
+  return { text: 'text-rose-400', dot: 'bg-rose-400' };
+};
+
+/**
+ * Return Tailwind color class for play count based on popularity tier.
+ * Parses formatted strings like "12M", "123K", "3.5B".
+ */
+const getPlayCountColor = (playCount) => {
+  if (!playCount || playCount === '-') return 'text-slate-600';
+  const str = String(playCount).toUpperCase();
+  const numPart = parseFloat(str);
+  if (isNaN(numPart)) return 'text-slate-600';
+
+  if (str.includes('B')) return 'text-amber-300';        // Billions — legendary
+  if (str.includes('M') && numPart >= 100) return 'text-purple-400'; // 100M+ — mega hit
+  if (str.includes('M')) return 'text-fuchsia-400';      // Millions — hit
+  if (str.includes('K') && numPart >= 100) return 'text-emerald-400'; // 100K+ — popular
+  if (str.includes('K')) return 'text-teal-400';          // Thousands — growing
+  return 'text-slate-500';                                // Low / numeric
 };
 
 const Results = () => {
@@ -89,19 +111,16 @@ const Results = () => {
 
   const loadTags = useCallback(async () => {
     try {
-      const u = await getCurrentUser();
-      if (u) {
-        const fetchedTags = await getTags(u.id);
-        const transformedTags = fetchedTags.map(t => ({ type: t.type, value: t.name, count: t.count }));
+      const fetchedTags = await getTags();
+      const transformedTags = fetchedTags.map(t => ({ type: t.type, value: t.name, count: t.count }));
 
-        // Ensure that URL tags are also present, even if count is 0
-        queryTags.forEach(qt => {
-          if (!transformedTags.some(t => t.value === qt)) {
-            transformedTags.push({ type: 'unknown', value: qt });
-          }
-        });
-        setTags(transformedTags);
-      }
+      // Ensure that URL tags are also present, even if count is 0
+      queryTags.forEach(qt => {
+        if (!transformedTags.some(t => t.value === qt)) {
+          transformedTags.push({ type: 'unknown', value: qt });
+        }
+      });
+      setTags(transformedTags);
     } catch (error) {
       console.error("Failed to fetch available filter tags", error);
     }
@@ -110,11 +129,8 @@ const Results = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const u = await getCurrentUser();
-
-      const ownerId = u ? u.id : 'web_user';
       const tagsString = queryTags.length > 0 ? queryTags.join(',') : null;
-      const data = await getSongs(ownerId, page * limit, limit, tagsString, queryBpm.min, queryBpm.max);
+      const data = await getSongs(page * limit, limit, tagsString, queryBpm.min, queryBpm.max);
       // Filter out songs without valid data
       const validSongs = data.filter(s => s.videoId);
       setSongs(validSongs);
@@ -198,6 +214,14 @@ const Results = () => {
     }
   };
 
+  const stopPlayback = () => {
+    setCurrentSong(null);
+    setPlayerContext(null);
+    setIsPlaying(false);
+    setPlaybackProgress(0);
+    setDuration(0);
+  };
+
   const handleSeek = (e) => {
     if (!playerContext || !duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -209,8 +233,8 @@ const Results = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto pb-32 scroll-smooth bg-surface-darker/20 relative">
-      <div className="px-6 py-4">
+    <div className="flex-1 overflow-y-auto scroll-smooth bg-surface-darker/20 relative flex flex-col pb-14">
+      <div className="px-6 py-4 flex-1">
 
         {/* Minimal Toolbar Filters */}
         {tags.length > 0 && (
@@ -371,7 +395,7 @@ const Results = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-white/5 bg-surface-darker/50">
-                  <th className="px-4 py-3 font-semibold w-16 text-center">Preview</th>
+                  <th className="px-4 py-3 font-semibold w-12 text-center">#</th>
                   <th className="px-4 py-3 font-semibold">Title</th>
                   <th className="px-4 py-3 font-semibold min-w-[220px]">Artist</th>
                   <th className="px-4 py-3 font-semibold">Genre</th>
@@ -382,243 +406,262 @@ const Results = () => {
                 </tr>
               </thead>
               <tbody className="text-sm divide-y divide-white/5">
-                {filteredSongs.map(song => (
-                  <tr
-                    key={song.id}
-                    className={`group hover:bg-white/5 transition-colors ${currentSong?.videoId === song.videoId ? 'bg-primary/5' : ''}`}
-                    onClick={() => setCurrentSong(song)}
-                  >
-                    <td className="px-4 py-4 whitespace-nowrap text-center">
-                      <button
-                        className={`flex items-center justify-center w-8 h-8 rounded-full transition-all mx-auto ${currentSong?.videoId === song.videoId
-                          ? 'bg-primary/20 hover:bg-primary text-primary hover:text-white'
-                          : 'border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white'
-                          }`}
-                        onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
-                      >
-                        <span className="material-icons text-sm">{(currentSong?.videoId === song.videoId && isPlaying) ? 'pause' : 'play_arrow'}</span>
-                      </button>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-4">
-                        {song.thumbnails?.[0]?.url ? (
-                          <img
-                            src={song.thumbnails[0].url}
-                            alt={song.title}
-                            className="h-10 w-10 rounded bg-surface-dark object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="h-10 w-10 rounded bg-surface-dark flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons text-slate-600 border">music_note</span>
+                {filteredSongs.map((song, index) => {
+                  const isCurrent = currentSong?.videoId === song.videoId;
+                  const isPlayable = song.isMusic !== false;
+                  return (
+                    <tr
+                      key={song.id}
+                      className={`group hover:bg-white/5 transition-colors ${isCurrent ? 'bg-primary/5' : ''} ${isPlayable ? 'cursor-pointer' : 'cursor-default'}`}
+                      onClick={() => { if (isPlayable) handlePlayPause(song); }}
+                    >
+                      <td className="px-4 py-4 whitespace-nowrap text-center">
+                        <span className="text-xs text-slate-500 font-mono tabular-nums">{page * limit + index + 1}</span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-4">
+                          <div className="album-art-wrapper relative flex-shrink-0">
+                            {song.thumbnails?.[0]?.url ? (
+                              <img
+                                src={song.thumbnails[0].url}
+                                alt={song.title}
+                                className="h-12 w-12 rounded-full bg-surface-dark object-cover"
+                              />
+                            ) : (
+                              <div className="h-12 w-12 rounded-full bg-surface-dark flex items-center justify-center">
+                                <span className="material-icons text-slate-600">music_note</span>
+                              </div>
+                            )}
+                            {/* Play/Block overlay */}
+                            {!isPlayable ? (
+                              <div className="album-art-overlay album-art-overlay--blocked" title="Non-music content">
+                                <span className="material-icons text-lg">block</span>
+                              </div>
+                            ) : isCurrent ? (
+                              <button
+                                className={`album-art-overlay album-art-overlay--playing ${isPlaying ? 'is-playing' : ''}`}
+                                onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
+                                title={isPlaying ? 'Pause' : 'Play'}
+                              >
+                                <span className="material-icons text-lg">
+                                  {isPlaying ? 'pause' : 'play_arrow'}
+                                </span>
+                              </button>
+                            ) : (
+                              <button
+                                className="album-art-overlay album-art-overlay--playable"
+                                onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
+                                title="Preview song"
+                              >
+                                <span className="material-icons text-lg">play_arrow</span>
+                              </button>
+                            )}
                           </div>
-                        )}
-                        <div className="min-w-0">
-                          <a
-                            href={song.url || `https://music.youtube.com/watch?v=${song.videoId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`font-medium truncate block transition-colors hover:underline ${currentSong?.videoId === song.videoId ? 'text-primary' : 'text-white group-hover:text-primary'}`}
-                            onClick={e => e.stopPropagation()}
-                          >
-                            {song.title}
-                          </a>
-                          <div className="text-[10px] text-slate-500 truncate">
-                            {song.album ? (
-                              <>
-                                {song.album.id ? (
-                                  <a
-                                    href={`https://music.youtube.com/browse/${song.album.id}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="hover:text-primary transition-colors"
-                                    onClick={e => e.stopPropagation()}
-                                  >
-                                    {song.album.name || song.album}
-                                  </a>
-                                ) : (
-                                  <span>{typeof song.album === 'string' ? song.album : song.album.name}</span>
-                                )}
-                                {song.year && <span> · {song.year}</span>}
-                              </>
-                            ) : song.year ? (
-                              <span>{song.year}</span>
-                            ) : null}
+                          <div className="min-w-0">
+                            <a
+                              href={song.url || `https://music.youtube.com/watch?v=${song.videoId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`font-medium truncate block transition-colors hover:underline ${isCurrent ? 'text-primary' : 'text-white group-hover:text-primary'}`}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {song.title}
+                            </a>
+                            <div className="text-[10px] text-slate-500 truncate">
+                              {song.album ? (
+                                <>
+                                  {song.album.id ? (
+                                    <a
+                                      href={`https://music.youtube.com/browse/${song.album.id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="hover:text-primary transition-colors"
+                                      onClick={e => e.stopPropagation()}
+                                    >
+                                      {song.album.name || song.album}
+                                    </a>
+                                  ) : (
+                                    <span>{typeof song.album === 'string' ? song.album : song.album.name}</span>
+                                  )}
+                                  {song.year && <span> · {song.year}</span>}
+                                </>
+                              ) : song.year ? (
+                                <span>{song.year}</span>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 min-w-[220px]">
-                      <div className="flex gap-1 items-center whitespace-nowrap">
-                        {Array.isArray(song.artists) ? (
-                          song.artists.map((artist, i) => (
-                            <span key={i}>
-                              {artist.id ? (
-                                <a
-                                  href={`https://music.youtube.com/channel/${artist.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-slate-300 hover:text-primary transition-colors text-sm"
-                                  onClick={e => e.stopPropagation()}
-                                >
-                                  {artist.name}
-                                </a>
-                              ) : (
-                                <span className="text-slate-300 text-sm">{artist.name}</span>
-                              )}
-                              {i < song.artists.length - 1 && <span className="text-slate-600">, </span>}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-slate-300 text-sm">{song.artists}</span>
-                        )}
-                      </div>
-                    </td>
+                      </td>
+                      <td className="px-4 py-4 min-w-[220px]">
+                        <div className="flex gap-1 items-center whitespace-nowrap">
+                          {Array.isArray(song.artists) ? (
+                            song.artists.map((artist, i) => (
+                              <span key={i}>
+                                {artist.id ? (
+                                  <a
+                                    href={`https://music.youtube.com/channel/${artist.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-slate-300 hover:text-primary transition-colors text-sm"
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    {artist.name}
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-300 text-sm">{artist.name}</span>
+                                )}
+                                {i < song.artists.length - 1 && <span className="text-slate-600">, </span>}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-300 text-sm">{song.artists}</span>
+                          )}
+                        </div>
+                      </td>
 
-                    <td className="px-4 py-4">
-                      <div className="flex gap-2 flex-wrap">
-                        {song.genres?.map((genre, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">{genre}</span>
-                        ))}
-                        {song.isMusic === false && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">Non-Music</span>
+                      <td className="px-4 py-4">
+                        <div className="flex gap-2 flex-wrap">
+                          {song.genres?.map((genre, i) => (
+                            <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">{genre}</span>
+                          ))}
+                          {song.isMusic === false && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">Non-Music</span>
+                          )}
+                          {song.success === false && song.isMusic !== false && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex gap-2 flex-wrap">
+                          {song.moods?.map((mood, i) => (
+                            <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20 whitespace-nowrap">{mood}</span>
+                          ))}
+                          {(!song.moods || song.moods.length === 0) && (
+                            <span className="text-slate-600 text-[10px] italic">Unknown</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex gap-2 flex-wrap">
+                          {song.instruments?.map((inst, i) => (
+                            <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap">{inst}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center text-xs font-semibold">
+                        {song.bpm ? (
+                          <span className={`inline-flex items-center gap-1.5 ${getBpmColor(song.bpm).text}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${getBpmColor(song.bpm).dot}`}></span>
+                            {song.bpm}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">-</span>
                         )}
-                        {song.success === false && song.isMusic !== false && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex gap-2 flex-wrap">
-                        {song.moods?.map((mood, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20 whitespace-nowrap">{mood}</span>
-                        ))}
-                        {(!song.moods || song.moods.length === 0) && (
-                          <span className="text-slate-600 text-[10px] italic">Unknown</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex gap-2 flex-wrap">
-                        {song.instruments?.map((inst, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap">{inst}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 text-center text-slate-300 text-xs font-medium">
-                      {song.bpm || '-'}
-                    </td>
-                    <td className="px-4 py-4 text-center text-slate-400 text-xs font-medium">
-                      {song.playCount || '-'}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className={`px-4 py-4 text-center text-xs font-semibold ${getPlayCountColor(song.playCount)}`}>
+                        {song.playCount || <span className="text-slate-600">-</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </div>
 
-        {/* Pagination placeholder matching CyberBase */}
-        <div className="mt-8 flex items-center justify-between border-t border-white/5 pt-6">
-          <p className="text-xs text-slate-500">
-            Showing <span className="text-white font-medium">{songs.length > 0 ? page * limit + 1 : 0}</span> to <span className="text-white font-medium">{Math.min((page + 1) * limit, page * limit + songs.length)}</span> tracks
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              disabled={page === 0}
-              onClick={() => setPage(p => Math.max(0, p - 1))}
-              className="px-3 py-2 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
-            >
-              Prev
-            </button>
-            <div className="flex items-center bg-surface-darker rounded-lg border border-white/10 p-1">
-              <span className="w-8 h-8 flex items-center justify-center rounded bg-primary text-white text-xs font-bold shadow-neon">{page + 1}</span>
-            </div>
-            <button
-              disabled={songs.length < limit}
-              onClick={() => setPage(p => p + 1)}
-              className="px-3 py-2 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-        <div className="h-20"></div>
       </div>
 
-
-
-      {/* CyberBase Fixed Player */}
-      {currentSong && (
-        <div className="fixed bottom-0 left-0 md:left-64 right-0 bg-surface-darker/95 backdrop-blur-md border-t border-primary/30 h-16 px-6 flex items-center justify-between z-50 shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
-          <div className="flex items-center gap-3 w-1/3">
-            {currentSong.thumbnails?.[0]?.url ? (
-              <img src={currentSong.thumbnails[0].url} alt={currentSong.title} className="w-10 h-10 rounded object-cover" />
-            ) : (
-              <div className="w-10 h-10 flex items-center justify-center bg-primary/20 rounded text-primary">
-                <span className="material-icons text-lg">audiotrack</span>
-              </div>
-            )}
-            <div className="min-w-0">
-              <h4 className="text-sm font-bold text-white mb-0 truncate">Preview: {currentSong.title}</h4>
-              <p className="text-[10px] text-slate-400 font-mono truncate">{formatSeconds(playbackProgress)} / {formatSeconds(duration)} • {formatArtists(currentSong.artists)}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center gap-4 w-1/3 max-w-lg z-50">
-            <div className="opacity-0 absolute pointer-events-none">
-              <YouTube
-                videoId={currentSong.videoId}
-                opts={{
-                  height: '40',
-                  width: '100',
-                  playerVars: {
-                    autoplay: 1,
-                    controls: 0,
-                  },
-                }}
-                onReady={handlePlayerReady}
-                onStateChange={handlePlayerStateChange}
-              />
-            </div>
-            <button className="text-slate-400 hover:text-white transition-colors" onClick={() => window.open(currentSong.url, '_blank')}><span className="material-icons text-xl">open_in_new</span></button>
-            <button
-              className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-neon hover:scale-105 transition-transform"
-              onClick={() => setCurrentSong(null)}
-            >
-              <span className="material-icons text-lg">stop</span>
-            </button>
-            <div className="flex gap-1 h-3 ml-2">
-              <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`}></div>
-              <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`}></div>
-              <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`}></div>
-              <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`}></div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-5 w-1/3 hidden md:flex">
-            <div
-              className="flex-1 max-w-[200px] h-6 flex items-center cursor-pointer group"
-              onClick={handleSeek}
-            >
-              <div className="w-full h-1 bg-white/10 rounded-full relative overflow-hidden pointer-events-none">
-                <div
-                  className="absolute inset-y-0 left-0 bg-primary group-hover:bg-purple-400 group-hover:shadow-[0_0_10px_rgba(175,37,244,0.8)] transition-all"
-                  style={{
-                    width: duration ? `${Math.min(100, Math.max(0, (playbackProgress / duration) * 100))}%` : '0%',
-                    transition: 'width 0.2s linear'
-                  }}
-                ></div>
-              </div>
-            </div>
-            <button
-              className="text-xs font-medium bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded transition-colors"
-              onClick={() => setCurrentSong(null)}
-            >
-              Close Preview
-            </button>
-          </div>
+      {/* ── Fixed Status Bar ── */}
+      <div className="status-bar">
+        {/* Left: track count */}
+        <div className="status-bar__left">
+          <p className="text-xs text-slate-500 whitespace-nowrap">
+            Showing <span className="text-white font-medium">{songs.length > 0 ? page * limit + 1 : 0}</span> to <span className="text-white font-medium">{Math.min((page + 1) * limit, page * limit + songs.length)}</span> tracks
+          </p>
         </div>
-      )}
+
+        {/* Center: trackbar (60%) */}
+        <div className="status-bar__center">
+          {currentSong ? (
+            <>
+              {/* Hidden YouTube player */}
+              <div className="opacity-0 absolute pointer-events-none w-0 h-0 overflow-hidden">
+                <YouTube
+                  videoId={currentSong.videoId}
+                  opts={{
+                    height: '1',
+                    width: '1',
+                    playerVars: { autoplay: 1, controls: 0 },
+                  }}
+                  onReady={handlePlayerReady}
+                  onStateChange={handlePlayerStateChange}
+                />
+              </div>
+
+              <button
+                className="status-bar__btn"
+                onClick={() => handlePlayPause(currentSong)}
+                title={isPlaying ? 'Pause' : 'Play'}
+              >
+                <span className="material-icons text-sm">{isPlaying ? 'pause' : 'play_arrow'}</span>
+              </button>
+              <button
+                className="status-bar__btn text-rose-400 hover:text-rose-300"
+                onClick={stopPlayback}
+                title="Stop"
+              >
+                <span className="material-icons text-sm">stop</span>
+              </button>
+
+              <span className="status-bar__time">{formatSeconds(playbackProgress)}</span>
+
+              <div className="status-bar__seek" onClick={handleSeek}>
+                <div className="status-bar__seek-bg">
+                  <div
+                    className="status-bar__seek-fill"
+                    style={{ width: duration ? `${Math.min(100, Math.max(0, (playbackProgress / duration) * 100))}%` : '0%' }}
+                  />
+                </div>
+              </div>
+
+              <span className="status-bar__time">{formatSeconds(duration)}</span>
+
+              {/* EQ visualiser */}
+              <div className="flex gap-0.5 h-3 ml-1">
+                <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
+                <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
+                <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
+                <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
+              </div>
+            </>
+
+          ) : (
+            <span className="text-[10px] text-slate-600 italic">No track playing</span>
+          )}
+        </div>
+
+        {/* Right: pagination */}
+        <div className="status-bar__right">
+          <button
+            disabled={page === 0}
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
+          >
+            Prev
+          </button>
+          <div className="flex items-center bg-surface-darker rounded-lg border border-white/10 p-0.5">
+            <span className="w-7 h-7 flex items-center justify-center rounded bg-primary text-white text-xs font-bold shadow-neon">{page + 1}</span>
+          </div>
+          <button
+            disabled={songs.length < limit}
+            onClick={() => setPage(p => p + 1)}
+            className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

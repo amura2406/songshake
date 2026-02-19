@@ -6,8 +6,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from song_shake.api import app
+from song_shake.features.auth.dependencies import get_current_user
 
 client = TestClient(app)
+
+FAKE_USER = {"sub": "test_user_123", "name": "Test User", "thumb": None}
+
+
+@pytest.fixture(autouse=True)
+def _override_auth():
+    """Override auth dependency for all tests."""
+    app.dependency_overrides[get_current_user] = lambda: FAKE_USER
+    yield
+    app.dependency_overrides.clear()
 
 
 # --- Fixtures ---
@@ -65,7 +76,7 @@ class TestGetSongs:
 
     @patch("song_shake.features.songs.routes.storage.get_all_tracks")
     def test_returns_all_tracks(self, mock_get_tracks):
-        """Should return all tracks for the default owner."""
+        """Should return all tracks for the authenticated user."""
         mock_get_tracks.return_value = SAMPLE_TRACKS
 
         response = client.get("/songs")
@@ -73,7 +84,7 @@ class TestGetSongs:
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 3
-        mock_get_tracks.assert_called_once_with(owner="web_user")
+        mock_get_tracks.assert_called_once_with(owner="test_user_123")
 
     @patch("song_shake.features.songs.routes.storage.get_all_tracks")
     def test_returns_empty_list_when_no_tracks(self, mock_get_tracks):
@@ -86,13 +97,13 @@ class TestGetSongs:
         assert response.json() == []
 
     @patch("song_shake.features.songs.routes.storage.get_all_tracks")
-    def test_filters_by_owner(self, mock_get_tracks):
-        """Should pass custom owner to storage."""
+    def test_uses_jwt_user_id_as_owner(self, mock_get_tracks):
+        """Should use the JWT sub claim as the owner (ignoring any query param)."""
         mock_get_tracks.return_value = []
 
-        response = client.get("/songs?owner=custom_user")
+        response = client.get("/songs")
 
-        mock_get_tracks.assert_called_once_with(owner="custom_user")
+        mock_get_tracks.assert_called_once_with(owner="test_user_123")
 
     @patch("song_shake.features.songs.routes.storage.get_all_tracks")
     def test_pagination_skip_and_limit(self, mock_get_tracks):
@@ -200,6 +211,12 @@ class TestGetSongs:
         response = client.get("/songs?max_bpm=301")
         assert response.status_code == 422
 
+    def test_returns_401_without_auth(self):
+        """Should return 401 when no JWT is provided."""
+        app.dependency_overrides.clear()
+        response = client.get("/songs")
+        assert response.status_code == 401
+
 
 # --- get_tags tests ---
 
@@ -217,16 +234,16 @@ class TestGetTags:
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 6
-        mock_get_tags.assert_called_once_with(owner="web_user")
+        mock_get_tags.assert_called_once_with(owner="test_user_123")
 
     @patch("song_shake.features.songs.routes.storage.get_tags")
-    def test_passes_owner_param(self, mock_get_tags):
-        """Should pass custom owner to storage."""
+    def test_uses_jwt_user_as_owner(self, mock_get_tags):
+        """Should use JWT sub as owner, not query params."""
         mock_get_tags.return_value = []
 
-        response = client.get("/tags?owner=custom_user")
+        response = client.get("/tags")
 
-        mock_get_tags.assert_called_once_with(owner="custom_user")
+        mock_get_tags.assert_called_once_with(owner="test_user_123")
 
     @patch("song_shake.features.songs.routes.storage.get_tags")
     def test_returns_empty_list(self, mock_get_tags):

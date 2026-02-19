@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.8.0)
+# Song Shake (v0.9.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
 
@@ -16,8 +16,8 @@ This tool takes your YouTube Music playlists and enriches them with **Genres**, 
 -   **CLI Tool**: Classic command-line interface for quick operations.
 -   **Rich Song Metadata**: Fetches detailed per-song data including multiple artists with individual channel links, album with browse links, release year, and play count (e.g. 3.5M, 123K).
 -   **Smart Enrichment**: Uses AI to analyze audio and determine genre/mood. Core logic is fully testable via Protocol-based dependency injection.
+-   **JWT-Based Authentication (New!)**: Multi-user JWT sessions with per-user Google token storage. All API routes are protected with Bearer token auth.
 -   **Local Database**: Stores results in `songs.db` (TinyDB).
--   **Seamless Auth**: Securely authenticate with your YouTube Music account.
 -   **Audio Download**: Automatically downloads tracks using `yt-dlp`.
 -   **AI Enrichment**: Uses **Gemini 3 Flash Preview** to listen to audio and extract:
     -   Genres (e.g., Pop, Indie, Rock)
@@ -164,7 +164,7 @@ graph TD
     Enrichment -->|Analyze| Gemini[Google Gemini AI]
     
     Storage -->|Persist| DB[(songs.db)]
-    Auth -->|Persist| Token[(oauth.json)]
+    Auth -->|Persist| TokenDB[(tokens.db)]
 ```
 
 ## 🧩 Components
@@ -201,8 +201,8 @@ A modern, responsive React application.
 
 ### 2. Authentication Flow
 - **CLI**: Uses Browser Header Paste (copy request headers from DevTools and paste into the terminal).
-- **Web**: Uses Web Application Flow (standard "Login with Google" redirect).
-- **Token Compatibility**: Both flows generate an `oauth.json` file. The backend is designed to handle both, but for the best Web UI experience, use the Web Login button.
+- **Web**: Uses JWT-based sessions. Google OAuth tokens are stored per-user in TinyDB; the app issues JWTs for session management.
+- **Session Duration**: JWTs are valid for 24 hours and automatically refresh.
 
 ### 4. Database Deduplication (New in v0.5)
 **Problem**: Processing the same song for multiple users wastes LLM tokens and time.
@@ -234,6 +234,8 @@ The tool uses `.env` file for credentials (see `.env.template`):
 -   `GOOGLE_API_KEY`: Your Gemini API Key (required for enrichment).
 -   `GOOGLE_CLIENT_ID`: Google OAuth Web Application Client ID (optional, for Web UI login).
 -   `GOOGLE_CLIENT_SECRET`: Google OAuth Web Application Client Secret (optional, for Web UI login).
+-   `JWT_SECRET`: Secret key for signing session JWTs. Auto-generated in development; **required** in production.
+    -   Generate with: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
 
 If `GOOGLE_API_KEY` is missing, the CLI will prompt you to enter it.
 

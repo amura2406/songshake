@@ -1,16 +1,21 @@
-"""Authentication routes for Song Shake API."""
+"""Authentication routes for Song Shake API.
 
-import json
+Handles Google OAuth login flow, JWT-based session management, and user
+profile lookup. Google OAuth tokens are stored per-user in TinyDB; the app
+issues its own JWT for session management.
+"""
+
 import os
 import time
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import RedirectResponse
-from typing import Optional
 from urllib.parse import urlencode
 
-from song_shake.features.auth import auth
+from song_shake.features.auth import jwt as app_jwt
+from song_shake.features.auth import token_store
+from song_shake.features.auth.dependencies import get_current_user
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -20,134 +25,67 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # --- Helpers ---
 
-OAUTH_FILE = "oauth.json"
 
+def _fetch_google_user_profile(access_token: str) -> dict:
+    """Fetch user profile from Google APIs.
 
-def get_ytmusic():
-    """Get an authenticated YTMusic instance or raise 401."""
+    Tries YouTube Channel API first (for channel ID + name), then falls back
+    to Google UserInfo endpoint.
+
+    Returns:
+        Dict with keys: ``id``, ``name``, ``thumbnail``.
+
+    Raises:
+        ValueError: If no profile could be fetched.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # 1. Try YouTube Channel info (best for stable user ID)
     try:
-        return auth.get_ytmusic()
-    except Exception:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-
-def _is_token_valid() -> bool:
-    """Check if oauth.json exists and the token is not expired."""
-    if not os.path.exists(OAUTH_FILE):
-        return False
-    try:
-        with open(OAUTH_FILE) as f:
-            tokens = json.load(f)
-        expires_at = tokens.get("expires_at")
-        if expires_at and time.time() > expires_at:
-            return False
-        # Must have at least an access_token or refresh_token
-        return bool(tokens.get("access_token") or tokens.get("refresh_token"))
-    except (json.JSONDecodeError, OSError):
-        return False
-
-
-# --- Routes ---
-
-@router.get("/logout")
-def logout():
-    logger.info("logout_started")
-    if os.path.exists(OAUTH_FILE):
-        os.remove(OAUTH_FILE)
-    logger.info("logout_success")
-    return {"status": "logged_out"}
-
-
-@router.get("/me")
-def get_current_user():
-    logger.info("get_current_user_started")
-    if not os.path.exists(OAUTH_FILE):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    try:
-        with open(OAUTH_FILE) as f:
-            tokens = json.load(f)
-
-        token = tokens.get("access_token")
-        if not token:
-            raise HTTPException(status_code=401, detail="No access token")
-
-        headers = {"Authorization": f"Bearer {token}"}
-
-        # 1. Try Channel Info (best for stable ID)
         res = requests.get(
             "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
             headers=headers,
             timeout=10,
         )
-
-        user_id = "web_user"
-        name = "Authenticated User"
-        thumb = None
-
         if res.status_code == 200:
             data = res.json()
             if data.get("items"):
                 item = data["items"][0]
-                user_id = item["id"]
                 snippet = item["snippet"]
-                name = snippet.get("title", "YouTube User")
-                thumb = snippet["thumbnails"]["default"]["url"]
-                logger.info("get_current_user_success", user_id=user_id)
                 return {
-                    "id": user_id,
-                    "name": name,
-                    "thumbnail": thumb,
-                    "authenticated": True,
+                    "id": item["id"],
+                    "name": snippet.get("title", "YouTube User"),
+                    "thumbnail": snippet.get("thumbnails", {}).get("default", {}).get("url"),
                 }
+    except requests.RequestException as exc:
+        logger.debug("channel_api_failed", error=str(exc))
 
-        # 2. Try UserInfo for name/email (requires profile/email scope)
-        try:
-            res2 = requests.get(
-                "https://www.googleapis.com/oauth2/v2/userinfo",
-                headers=headers,
-                timeout=10,
-            )
-            if res2.status_code == 200:
-                uinfo = res2.json()
-                user_id = uinfo.get("id") or uinfo.get("email") or "web_user"
-                name = uinfo.get("name") or uinfo.get("email") or "User"
-                thumb = uinfo.get("picture")
-                logger.info("get_current_user_success", user_id=user_id, source="userinfo")
-                return {
-                    "id": user_id,
-                    "name": name,
-                    "thumbnail": thumb,
-                    "authenticated": True,
-                }
-        except requests.RequestException as e:
-            logger.warning("userinfo_endpoint_failed", error=str(e))
+    # 2. Try Google UserInfo
+    try:
+        res = requests.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers=headers,
+            timeout=10,
+        )
+        if res.status_code == 200:
+            uinfo = res.json()
+            return {
+                "id": uinfo.get("id") or uinfo.get("email"),
+                "name": uinfo.get("name") or uinfo.get("email") or "User",
+                "thumbnail": uinfo.get("picture"),
+            }
+    except requests.RequestException as exc:
+        logger.debug("userinfo_api_failed", error=str(exc))
 
-        # 3. Fallback
-        logger.info("get_current_user_success", user_id="web_user", source="fallback")
-        return {
-            "id": "web_user",
-            "name": "Authenticated User (No Channel)",
-            "thumbnail": None,
-            "authenticated": True,
-            "note": "Could not fetch channel profile",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("get_current_user_failed", error=str(e))
-        return {"authenticated": False}
+    raise ValueError("Could not fetch user profile from Google")
 
 
-@router.get("/status")
-def auth_status():
-    authenticated = _is_token_valid()
-    return {"authenticated": authenticated}
+# --- Routes ---
 
 
 @router.get("/google/login")
 def google_auth_login():
+    """Redirect the user to Google's OAuth consent screen."""
     logger.info("google_auth_login_started")
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     if not client_id:
@@ -170,37 +108,170 @@ def google_auth_login():
 
 @router.get("/google/callback")
 def google_auth_callback(code: str):
+    """Exchange authorization code for tokens, store per-user, issue JWT."""
     logger.info("google_auth_callback_started")
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
     redirect_uri = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/")
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
     if not client_id or not client_secret:
         raise HTTPException(status_code=400, detail="Credentials not set in .env")
 
-    token_url = "https://oauth2.googleapis.com/token"
-    data = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "code": code,
-        "grant_type": "authorization_code",
-        "redirect_uri": redirect_uri,
-    }
-
+    # Exchange code for tokens
     try:
-        response = requests.post(token_url, data=data, timeout=10)
+        response = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": redirect_uri,
+            },
+            timeout=10,
+        )
         response.raise_for_status()
         tokens = response.json()
-
-        tokens["expires_at"] = int(time.time()) + tokens.get("expires_in", 3600)
-
-        with open(OAUTH_FILE, "w") as f:
-            json.dump(tokens, f)
-
-        logger.info("google_auth_callback_success")
-        return RedirectResponse(frontend_url)
-    except requests.RequestException as e:
-        logger.error("google_auth_callback_failed", error=str(e))
+    except requests.RequestException as exc:
+        logger.error("google_token_exchange_failed", error=str(exc))
         raise HTTPException(status_code=400, detail="Token exchange failed")
 
+    tokens["expires_at"] = int(time.time()) + tokens.get("expires_in", 3600)
+
+    # Fetch user profile from Google
+    access_token = tokens["access_token"]
+    try:
+        profile = _fetch_google_user_profile(access_token)
+    except ValueError:
+        logger.error("google_profile_fetch_failed")
+        raise HTTPException(status_code=400, detail="Could not identify user from Google")
+
+    user_id = profile["id"]
+    user_name = profile["name"]
+    user_thumb = profile.get("thumbnail")
+
+    # Store Google tokens per-user in TinyDB
+    token_store.save_google_tokens(user_id, tokens)
+
+    # Issue app JWT
+    jwt_token = app_jwt.create_access_token(
+        user_id=user_id,
+        name=user_name,
+        thumbnail=user_thumb,
+    )
+
+    logger.info("google_auth_callback_success", user_id=user_id)
+
+    # Redirect to frontend with JWT in query param
+    return RedirectResponse(f"{frontend_url}/login?token={jwt_token}")
+
+
+@router.get("/me")
+def get_current_user_profile(user: dict = Depends(get_current_user)):
+    """Return the current user's profile from their JWT claims."""
+    logger.info("get_current_user_started", user_id=user["sub"])
+    return {
+        "id": user["sub"],
+        "name": user["name"],
+        "thumbnail": user.get("thumb"),
+        "authenticated": True,
+    }
+
+
+@router.get("/status")
+def auth_status(authorization: str = Header(default="")):
+    """Check if the caller has a valid JWT.
+
+    Unlike other endpoints, this does NOT raise 401 on missing/invalid tokens.
+    Instead, it returns ``{authenticated: false}`` so the frontend can check
+    auth state without triggering error interceptors.
+    """
+    if not authorization.startswith("Bearer "):
+        return {"authenticated": False}
+
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        return {"authenticated": False}
+
+    try:
+        payload = app_jwt.decode_access_token(token)
+        return {
+            "authenticated": True,
+            "user": {
+                "id": payload["sub"],
+                "name": payload["name"],
+                "thumbnail": payload.get("thumb"),
+            },
+        }
+    except ValueError:
+        return {"authenticated": False}
+
+
+@router.get("/refresh")
+def refresh_auth(user: dict = Depends(get_current_user)):
+    """Refresh the Google token and issue a new app JWT.
+
+    The frontend should call this when it gets a 401 or proactively before
+    the JWT expires.
+    """
+    logger.info("refresh_auth_started", user_id=user["sub"])
+    user_id = user["sub"]
+
+    tokens = token_store.get_google_tokens(user_id)
+    if not tokens:
+        raise HTTPException(status_code=401, detail="No stored Google tokens")
+
+    # Refresh Google token
+    refresh_tok = tokens.get("refresh_token")
+    if not refresh_tok:
+        raise HTTPException(status_code=401, detail="No refresh token available")
+
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=401, detail="Missing OAuth credentials")
+
+    try:
+        resp = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_tok,
+                "grant_type": "refresh_token",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        new_tokens = resp.json()
+    except requests.RequestException as exc:
+        logger.warning("google_token_refresh_failed", user_id=user_id, error=str(exc))
+        raise HTTPException(status_code=401, detail="Token refresh failed")
+
+    tokens["access_token"] = new_tokens["access_token"]
+    tokens["expires_in"] = new_tokens.get("expires_in", 3600)
+    tokens["expires_at"] = int(time.time()) + tokens["expires_in"]
+    if "refresh_token" in new_tokens:
+        tokens["refresh_token"] = new_tokens["refresh_token"]
+
+    token_store.save_google_tokens(user_id, tokens)
+
+    # Issue fresh app JWT (may have updated name/thumbnail)
+    new_jwt = app_jwt.create_access_token(
+        user_id=user_id,
+        name=user["name"],
+        thumbnail=user.get("thumb"),
+    )
+
+    logger.info("refresh_auth_success", user_id=user_id)
+    return {"refreshed": True, "token": new_jwt, "expires_at": tokens["expires_at"]}
+
+
+@router.get("/logout")
+def logout(user: dict = Depends(get_current_user)):
+    """Delete the user's stored Google tokens."""
+    logger.info("logout_started", user_id=user["sub"])
+    token_store.delete_google_tokens(user["sub"])
+    logger.info("logout_success", user_id=user["sub"])
+    return {"status": "logged_out"}

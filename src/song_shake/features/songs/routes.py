@@ -1,9 +1,10 @@
 """Songs and tags routes for Song Shake API."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
+from song_shake.features.auth.dependencies import get_current_user
 from song_shake.features.songs import storage
 from song_shake.platform.logging_config import get_logger
 
@@ -30,7 +31,6 @@ class Song(BaseModel):
     status: str
     error_message: Optional[str] = None
     url: Optional[str] = None
-    owner: Optional[str] = None
 
 
 class TagResponse(BaseModel):
@@ -43,13 +43,14 @@ class TagResponse(BaseModel):
 
 @router.get("/songs", response_model=List[Song])
 def get_songs(
-    owner: str = "web_user",
+    user: dict = Depends(get_current_user),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     tags: Optional[str] = None,
     min_bpm: Optional[int] = Query(default=None, ge=1, le=300),
     max_bpm: Optional[int] = Query(default=None, ge=1, le=300),
 ):
+    owner = user["sub"]
     logger.info(
         "get_songs_requested",
         owner=owner,
@@ -91,5 +92,5 @@ def get_songs(
 
 
 @router.get("/tags", response_model=List[TagResponse])
-def get_tags(owner: str = "web_user"):
-    return storage.get_tags(owner=owner)
+def get_tags(user: dict = Depends(get_current_user)):
+    return storage.get_tags(owner=user["sub"])

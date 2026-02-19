@@ -29,8 +29,7 @@ export const JobsProvider = ({ user, children }) => {
 
     const fetchJobs = useCallback(async () => {
         try {
-            const owner = user?.id || 'web_user';
-            const data = await getJobs(null, owner);
+            const data = await getJobs();
             if (data.active) {
                 setActiveJobs(data.active);
             }
@@ -40,7 +39,7 @@ export const JobsProvider = ({ user, children }) => {
         } catch (err) {
             console.error('Failed to fetch jobs', err);
         }
-    }, [user]);
+    }, []);
 
     // Connect SSE for each active job
     const connectSSE = useCallback((jobId) => {
@@ -105,8 +104,7 @@ export const JobsProvider = ({ user, children }) => {
     }, [activeJobs, connectSSE]);
 
     const createJob = async (playlistId, wipe = false, playlistName = '') => {
-        const owner = user?.id || 'web_user';
-        const job = await apiCreateJob(playlistId, owner, null, wipe, playlistName);
+        const job = await apiCreateJob(playlistId, null, wipe, playlistName);
         setActiveJobs(prev => [...prev, job]);
         connectSSE(job.id);
         return job;
