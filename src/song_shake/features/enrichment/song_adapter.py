@@ -77,6 +77,11 @@ class YTMusicSongAdapter:
         # Merge: watch playlist provides artists/album/year,
         # get_song provides viewCount and musicVideoType
         artists = watch_data.get("artists") or song_data.get("artists") or []
+        # Normalize artists: ytmusicapi may return strings or dicts
+        artists = [
+            a if isinstance(a, dict) else {"name": str(a), "id": None}
+            for a in artists
+        ]
         album = watch_data.get("album") or song_data.get("album")
         year = watch_data.get("year") or song_data.get("year")
         is_music = song_data.get("isMusic", watch_data.get("isMusic", True))
@@ -110,7 +115,11 @@ class YTMusicSongAdapter:
             video_type = track.get("videoType")
 
             artists = [
-                {"name": a.get("name", "Unknown"), "id": a.get("id")}
+                (
+                    {"name": a.get("name", "Unknown"), "id": a.get("id")}
+                    if isinstance(a, dict)
+                    else {"name": str(a), "id": None}
+                )
                 for a in track.get("artists", [])
             ]
 

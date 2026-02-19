@@ -26,6 +26,31 @@ console = Console()
 
 TEMP_DIR_BASE = "temp_downloads"
 
+
+def _artist_display_name(artist) -> str:
+    """Extract display name from an artist entry.
+
+    ytmusicapi may return artists as dicts ({"name": "X", "id": "Y"})
+    or occasionally as plain strings. Handle both.
+    """
+    if isinstance(artist, dict):
+        return artist.get("name", "")
+    return str(artist)
+
+
+def _normalize_artist(artist) -> dict:
+    """Convert an artist entry to a consistent dict format.
+
+    ytmusicapi may return artists as dicts or plain strings.
+    Always returns {"name": "...", "id": ...}.
+    """
+    if isinstance(artist, dict):
+        return {
+            "name": artist.get("name", "Unknown").removesuffix(" - Topic").strip(),
+            "id": artist.get("id"),
+        }
+    return {"name": str(artist).removesuffix(" - Topic").strip(), "id": None}
+
 # Pricing for Gemini 3 Flash (Preview)
 # Input Audio: $1.00 / 1M tokens
 # Output: $3.00 / 1M tokens
@@ -197,15 +222,9 @@ def _build_track_data(
     """
     is_error = bool(metadata.get("error"))
 
-    # Structured artists: [{"name": "...", "id": "..."}]
+    # Structured artists: [{\"name\": \"...\", \"id\": \"...\"}]
     raw_artists = track.get("artists", [])
-    artists = [
-        {
-            "name": a.get("name", "Unknown").removesuffix(" - Topic").strip(),
-            "id": a.get("id"),
-        }
-        for a in raw_artists
-    ]
+    artists = [_normalize_artist(a) for a in raw_artists]
 
     # Structured album: {"name": "...", "id": "..."}
     raw_album = track.get("album")
@@ -420,7 +439,7 @@ def process_playlist(
                 if rich_artists:
                     track["artists"] = rich_artists
                     artists_display = ", ".join(
-                        a["name"] for a in rich_artists
+                        _artist_display_name(a) for a in rich_artists
                     )
                 rich_album = song_info.get("album")
                 if rich_album:
@@ -463,7 +482,47 @@ def process_playlist(
 
                 # --- Download & enrich ---
                 try:
-                    filename = audio_downloader.download(video_id, job_temp_dir)
+                    download_vid = video_id
+                    playable_video_id = None
+
+                    try:
+                        filename = audio_downloader.download(download_vid, job_temp_dir)
+                    except Exception as dl_err:
+                        # If download fails with "Video unavailable", try
+                        # searching for an alternative before giving up.
+                        if "Video unavailable" in str(dl_err) or "not available" in str(dl_err):
+                            progress.console.print(
+                                f"[yellow]Download failed for {title} — "
+                                f"searching for alternative…[/yellow]"
+                            )
+                            alt_vid = song_fetcher.search_playable_alternative(
+                                title, artists_display
+                            )
+                            if alt_vid and alt_vid != video_id:
+                                progress.console.print(
+                                    f"[green]Found alternative: {alt_vid}[/green]"
+                                )
+                                download_vid = alt_vid
+                                playable_video_id = alt_vid
+                                # Re-fetch metadata from the alternative
+                                alt_info = song_fetcher.get_song(alt_vid)
+                                alt_artists = alt_info.get("artists") or track.get("artists", [])
+                                alt_album = alt_info.get("album") or track.get("album")
+                                alt_year = alt_info.get("year") or album_year
+                                alt_thumbnails = alt_info.get("thumbnails") or track.get("thumbnails", [])
+                                alt_play_count = alt_info.get("playCount") or play_count
+                                track["artists"] = alt_artists
+                                track["album"] = alt_album
+                                track["thumbnails"] = alt_thumbnails
+                                if alt_year:
+                                    album_year = alt_year
+                                play_count = alt_play_count
+                                filename = audio_downloader.download(download_vid, job_temp_dir)
+                            else:
+                                raise  # No alternative found, propagate original error
+                        else:
+                            raise  # Non-download error, propagate
+
                     metadata = audio_enricher.enrich(
                         filename, title, artists_display,
                     )
@@ -486,6 +545,7 @@ def process_playlist(
                         video_id, title, track, owner, metadata,
                         is_music=True, album_year=album_year,
                         play_count=play_count,
+                        playable_video_id=playable_video_id,
                     )
 
                     storage_port.save_track(track_data)
@@ -493,6 +553,11 @@ def process_playlist(
                     _report(i, total, f"Processed: {title}", tracker, track_data)
 
                 except Exception as e:
+                    logger.exception(
+                        "track_processing_failed",
+                        title=title,
+                        video_id=video_id,
+                    )
                     console.print(f"[red]Failed to process {title}: {e}[/red]")
                     tracker.failed += 1
                     err_metadata = {
@@ -711,7 +776,7 @@ def retry_failed_tracks(
                 else:
                     rich_artists = song_info.get("artists") or failed.get("artists", [])
                 artists_display = ", ".join(
-                    a["name"] for a in rich_artists
+                    _artist_display_name(a) for a in rich_artists
                 )
 
                 track = {
@@ -785,7 +850,7 @@ def retry_failed_tracks(
                         track["thumbnails"] = alt_thumbnails
                         rich_artists = alt_artists
                         artists_display = ", ".join(
-                            a["name"] for a in rich_artists
+                            _artist_display_name(a) for a in rich_artists
                         )
                         play_count = alt_play_count
                         if alt_year:

@@ -9,9 +9,37 @@ STORAGE_FILE = "songs.db"
 # from multiple background threads (FastAPI BackgroundTasks uses a thread pool).
 _db_lock = threading.Lock()
 
+# Singleton TinyDB instance — prevents stale _last_id caches when
+# multiple callers (concurrent enrichment jobs) access the same file.
+_db_instance: TinyDB | None = None
+_db_instance_path: str | None = None
+
 
 def init_db(path: str = STORAGE_FILE) -> TinyDB:
-    return TinyDB(path)
+    """Return a singleton TinyDB instance for the given path."""
+    global _db_instance, _db_instance_path
+    if _db_instance is None or _db_instance_path != path:
+        _db_instance = TinyDB(path)
+        _db_instance_path = path
+    return _db_instance
+
+
+def _safe_write(table, operation: str, *args, max_retries: int = 3, **kwargs):
+    """Execute a TinyDB write with retry on document-ID collision.
+
+    TinyDB's auto-increment IDs can collide under concurrent writes.
+    On collision (ValueError), clear the table cache to refresh _last_id
+    from disk, then retry.
+    """
+    for attempt in range(max_retries):
+        try:
+            return getattr(table, operation)(*args, **kwargs)
+        except ValueError as e:
+            if "already exists" in str(e) and attempt < max_retries - 1:
+                table.clear_cache()
+                continue
+            raise
+
 
 def save_track(db: TinyDB, track_data: dict):
     """Save or update track in global catalog and link to user."""
@@ -28,13 +56,16 @@ def save_track(db: TinyDB, track_data: dict):
         track_data.pop('owner', None)
 
         if video_id:
-            songs_table.upsert(track_data, Song.videoId == video_id)
+            _safe_write(songs_table, 'upsert', track_data, Song.videoId == video_id)
             # Link user to this videoId if not already linked
             if not user_songs_table.search((UserSong.owner == owner) & (UserSong.videoId == video_id)):
-                user_songs_table.insert({'owner': owner, 'videoId': video_id})
+                try:
+                    _safe_write(user_songs_table, 'insert', {'owner': owner, 'videoId': video_id})
+                except ValueError:
+                    pass  # Link already exists or collision resolved
         else:
             # Fallback if no videoId (should rarely happen)
-            songs_table.insert(track_data)
+            _safe_write(songs_table, 'insert', track_data)
 
 def save_enrichment_history(playlist_id: str, owner: str, metadata: dict, db: TinyDB = None):
     """Save enrichment history for a playlist."""
@@ -56,7 +87,7 @@ def save_enrichment_history(playlist_id: str, owner: str, metadata: dict, db: Ti
         if 'error' in metadata:
             record['error'] = metadata['error']
 
-        history_table.upsert(record, (History.playlistId == playlist_id) & (History.owner == owner))
+        _safe_write(history_table, 'upsert', record, (History.playlistId == playlist_id) & (History.owner == owner))
 
 def get_enrichment_history(owner: str, db: TinyDB = None) -> dict:
     """Get enrichment history for all playlists of an owner. Returns dict keyed by playlistId."""
