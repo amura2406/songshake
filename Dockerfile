@@ -10,21 +10,22 @@
 
 FROM python:3.11-slim AS base
 
-# Install uv for fast Python dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
 WORKDIR /app
 
-# Install Python dependencies (cached layer)
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --extra firebase
+# Install Python dependencies via pip (avoids uv lock file URL issues
+# with Cloud Build's artifact-foundry-prod proxy returning 401).
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir ".[firebase]"
 
 # Copy application source
 COPY src/ ./src/
+
+# Re-install the project itself (editable-like) so the package is importable
+RUN pip install --no-cache-dir --no-deps .
 
 # Cloud Run uses $PORT (default 8080)
 ENV PORT=8080
 
 EXPOSE 8080
 
-CMD ["uv", "run", "uvicorn", "song_shake.api:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "song_shake.api:app", "--host", "0.0.0.0", "--port", "8080"]

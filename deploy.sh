@@ -76,7 +76,7 @@ if [ "$BACKEND" = true ]; then
     --region "$REGION" \
     --allow-unauthenticated \
     --no-cpu-throttling \
-    --set-env-vars "STORAGE_BACKEND=firestore,ENV=production,CORS_ORIGINS=$CORS_ORIGIN" \
+    --set-env-vars "STORAGE_BACKEND=firestore,ENV=production,CORS_ORIGINS=$CORS_ORIGIN,OAUTH_REDIRECT_URI=https://${FIREBASE_SITE}.web.app/auth/google/callback,FRONTEND_URL=https://${FIREBASE_SITE}.web.app" \
     --update-secrets "GOOGLE_API_KEY=GOOGLE_API_KEY:latest,GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,JWT_SECRET=JWT_SECRET:latest" \
     --min-instances=0 \
     --max-instances=1 \
