@@ -39,3 +39,12 @@ class TinyDBStorageAdapter:
 
     def get_enrichment_history(self, owner: str) -> dict:
         return storage.get_enrichment_history(owner, self._db)
+
+    def get_all_history(self) -> dict:
+        return storage.get_all_history(self._db)
+
+    def save_task_state(self, task_id: str, state: dict) -> None:
+        storage.save_task_state(task_id, state, self._db)
+
+    def get_task_state(self, task_id: str) -> dict | None:
+        return storage.get_task_state(task_id, self._db)

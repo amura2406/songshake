@@ -3,9 +3,11 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+import math
 
 from song_shake.features.auth.dependencies import get_current_user
-from song_shake.features.songs import storage
+from song_shake.platform.protocols import StoragePort
+from song_shake.platform.storage_factory import get_songs_storage
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -33,6 +35,14 @@ class Song(BaseModel):
     status: str
     error_message: Optional[str] = None
     url: Optional[str] = None
+    vocalType: Optional[str] = None
+
+
+class PaginatedSongs(BaseModel):
+    items: List[Song]
+    total: int
+    page: int
+    pages: int
 
 
 class TagResponse(BaseModel):
@@ -43,9 +53,10 @@ class TagResponse(BaseModel):
 
 # --- Routes ---
 
-@router.get("/songs", response_model=List[Song])
+@router.get("/songs", response_model=PaginatedSongs)
 def get_songs(
     user: dict = Depends(get_current_user),
+    storage: StoragePort = Depends(get_songs_storage),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     tags: Optional[str] = None,
@@ -89,10 +100,22 @@ def get_songs(
 
         filtered_tracks.append(track)
 
-    logger.debug("get_songs_result", count=len(filtered_tracks))
-    return filtered_tracks[skip : skip + limit]
+    total = len(filtered_tracks)
+    page_num = skip // limit if limit else 0
+    pages = math.ceil(total / limit) if limit else 1
+
+    logger.debug("get_songs_result", count=total, page=page_num, pages=pages)
+    return PaginatedSongs(
+        items=filtered_tracks[skip : skip + limit],
+        total=total,
+        page=page_num,
+        pages=pages,
+    )
 
 
 @router.get("/tags", response_model=List[TagResponse])
-def get_tags(user: dict = Depends(get_current_user)):
+def get_tags(
+    user: dict = Depends(get_current_user),
+    storage: StoragePort = Depends(get_songs_storage),
+):
     return storage.get_tags(owner=user["sub"])

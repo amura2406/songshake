@@ -1,0 +1,18 @@
+rules_version = '2';
+
+// SongShake Firestore Security Rules
+// ---
+// All Firestore access happens through the backend API (FastAPI) using
+// the Firebase Admin SDK, which bypasses these rules entirely.
+// These rules are defense-in-depth: deny ALL client-side access to
+// prevent accidental direct reads/writes from the browser.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Deny all client-side access by default.
+    // The backend uses Admin SDK which bypasses rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

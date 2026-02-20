@@ -13,10 +13,23 @@ from ytmusicapi import YTMusic
 from ytmusicapi.auth.oauth import OAuthCredentials
 
 from song_shake.features.auth import jwt as app_jwt
-from song_shake.features.auth import token_store
+from song_shake.platform.protocols import TokenStoragePort
+from song_shake.platform.storage_factory import get_token_storage
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Module-level token storage reference for functions called outside FastAPI DI.
+# Initialised lazily on first use via _get_token_store().
+_token_store: TokenStoragePort | None = None
+
+
+def _get_token_store() -> TokenStoragePort:
+    """Return the module-level token store, creating it on first call."""
+    global _token_store
+    if _token_store is None:
+        _token_store = get_token_storage()
+    return _token_store
 
 
 def get_current_user(
@@ -101,7 +114,7 @@ def _refresh_google_token(user_id: str, tokens: dict) -> dict | None:
         if "refresh_token" in new_tokens:
             tokens["refresh_token"] = new_tokens["refresh_token"]
 
-        token_store.save_google_tokens(user_id, tokens)
+        _get_token_store().save_google_tokens(user_id, tokens)
         logger.info("google_token_refreshed", user_id=user_id)
         return tokens
     except requests.RequestException as exc:
@@ -127,7 +140,7 @@ def get_authenticated_ytmusic(user: dict) -> YTMusic:
             tokens cannot be refreshed.
     """
     user_id = user["sub"]
-    tokens = token_store.get_google_tokens(user_id)
+    tokens = _get_token_store().get_google_tokens(user_id)
 
     if not tokens:
         raise HTTPException(

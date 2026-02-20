@@ -62,7 +62,7 @@ class YTMusicSongAdapter:
         song_data = self._fetch_song_details(video_id)
         playable = song_data.get("playable", True)
 
-        # 2. Rich metadata from watch playlist (artists, album, year)
+        # 2. Rich metadata from watch playlist (artists, album, year, THUMBNAILS)
         #    Skip if video is UNPLAYABLE — watch playlist returns wrong
         #    cross-referenced metadata for unplayable videos.
         if playable:
@@ -74,7 +74,7 @@ class YTMusicSongAdapter:
                 video_id=video_id,
             )
 
-        # Merge: watch playlist provides artists/album/year,
+        # Merge: watch playlist provides artists/album/year/thumbnails,
         # get_song provides viewCount and musicVideoType
         artists = watch_data.get("artists") or song_data.get("artists") or []
         # Normalize artists: ytmusicapi may return strings or dicts
@@ -84,13 +84,37 @@ class YTMusicSongAdapter:
         ]
         album = watch_data.get("album") or song_data.get("album")
         year = watch_data.get("year") or song_data.get("year")
-        is_music = song_data.get("isMusic", watch_data.get("isMusic", True))
+        # Merge isMusic: watch_playlist's videoType detection is more
+        # reliable than get_song's musicVideoType (which can be None for
+        # legitimate music tracks, especially unauthenticated).  Use
+        # watch_data when song_data is ambiguous (None).
+        song_is_music = song_data.get("isMusic")
+        watch_is_music = watch_data.get("isMusic")
+        if song_is_music is not None:
+            is_music = song_is_music
+        elif watch_is_music is not None:
+            is_music = watch_is_music
+        else:
+            is_music = True  # Default: most playlist tracks are music
         play_count = song_data.get("playCount")
-        thumbnails = song_data.get("thumbnails") or []
+
+        # Prefer watch_playlist thumbnails (square album art from
+        # lh3.googleusercontent.com) over get_song thumbnails (which
+        # are 16:9 video frames from i.ytimg.com for OMVs).
+        thumbnails = watch_data.get("thumbnails") or song_data.get("thumbnails") or []
+
         channel_id = (
             (artists[0]["id"] if artists and artists[0].get("id") else "")
             or song_data.get("channelId", "")
         )
+
+        if not album:
+            logger.debug(
+                "no_album_for_song",
+                video_id=video_id,
+                title=song_data.get("title"),
+                watch_data_keys=list(watch_data.keys()) if watch_data else [],
+            )
 
         return {
             "title": song_data.get("title"),
@@ -105,10 +129,18 @@ class YTMusicSongAdapter:
         }
 
     def _fetch_watch_playlist(self, video_id: str) -> dict:
-        """Fetch rich metadata from get_watch_playlist."""
+        """Fetch rich metadata from get_watch_playlist.
+
+        Returns artists, album, year, thumbnails (square album art),
+        and isMusic detection.
+        """
         try:
             result = self._yt.get_watch_playlist(video_id)
             if not result or not result.get("tracks"):
+                logger.debug(
+                    "watch_playlist_empty",
+                    video_id=video_id,
+                )
                 return {}
 
             track = result["tracks"][0]
@@ -130,14 +162,24 @@ class YTMusicSongAdapter:
                 else None
             )
 
+            # Extract square album art thumbnails from watch playlist
+            raw_thumbs = track.get("thumbnail", [])
+            if isinstance(raw_thumbs, dict):
+                raw_thumbs = raw_thumbs.get("thumbnails", [])
+            thumbnails = [
+                {"url": t["url"], "width": t.get("width"), "height": t.get("height")}
+                for t in raw_thumbs if t.get("url")
+            ]
+
             return {
                 "isMusic": video_type in MUSIC_VIDEO_TYPES if video_type else None,
                 "artists": artists,
                 "album": album,
                 "year": track.get("year"),
+                "thumbnails": thumbnails,
             }
         except Exception as e:
-            logger.debug("watch_playlist_failed", video_id=video_id, error=str(e))
+            logger.warning("watch_playlist_failed", video_id=video_id, error=str(e))
             return {}
 
     def _fetch_song_details(self, video_id: str) -> dict:
@@ -165,7 +207,7 @@ class YTMusicSongAdapter:
 
             return {
                 "title": vd.get("title"),
-                "isMusic": mvt in MUSIC_VIDEO_TYPES if mvt else False,
+                "isMusic": mvt in MUSIC_VIDEO_TYPES if mvt else None,
                 "artists": [{"name": author, "id": vd.get("channelId", "")}] if author else [],
                 "album": None,
                 "year": None,

@@ -119,7 +119,7 @@ export const getSongs = async (skip = 0, limit = 50, tags = null, minBpm = null,
   if (minBpm !== null) params.min_bpm = minBpm;
   if (maxBpm !== null) params.max_bpm = maxBpm;
   const res = await api.get('/api/songs', { params });
-  return res.data;
+  return res.data;  // { items, total, page, pages }
 };
 
 // --- Job System APIs ---

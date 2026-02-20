@@ -12,16 +12,24 @@ wheels/
 
 # Environment variables and Secrets
 .env
+.env.production
 oauth.json
 curl.txt
 
 # Temporary files and Output
 temp_downloads/
 enriched_playlist.json
-__pycache__/
 *.DS_Store
 inspect_genai.py
 parse_auth.py
 
 # Database
 songs.db
+tokens.db
+
+# Firebase
+.firebase/
+
+# Frontend
+web/node_modules/
+web/dist/

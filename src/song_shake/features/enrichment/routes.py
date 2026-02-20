@@ -10,9 +10,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from song_shake.features.auth.dependencies import get_current_user
+from song_shake.features.auth.dependencies import get_current_user, get_authenticated_ytmusic
 from song_shake.features.enrichment import enrichment
-from song_shake.features.songs import storage
+from song_shake.features.enrichment.playlist_adapter import YTMusicPlaylistAdapter
+from song_shake.platform.protocols import StoragePort
+from song_shake.platform.storage_factory import get_songs_storage
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -20,15 +22,35 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/enrichment", tags=["enrichment"])
 
 # In-memory state for real-time SSE streaming (fast reads during progress).
-# Final state is persisted to TinyDB so it survives restarts.
+# Final state is persisted to storage so it survives restarts.
 enrichment_tasks: Dict[str, Dict[str, Any]] = {}
+
+# Module-level storage reference, set during app startup via init_storage().
+_storage: StoragePort | None = None
+
+
+def init_storage(storage: StoragePort) -> None:
+    """Set the module-level storage used by background tasks.
+
+    Called once during app startup. Background tasks can't use FastAPI Depends()
+    so they need a module-level reference.
+    """
+    global _storage
+    _storage = storage
+
+
+def _get_storage() -> StoragePort:
+    """Return the module-level storage, falling back to factory if not init'd."""
+    if _storage is not None:
+        return _storage
+    return get_songs_storage()
 
 
 def _persist_task(task_id: str) -> None:
-    """Persist the current in-memory task state to TinyDB."""
+    """Persist the current in-memory task state to storage."""
     if task_id in enrichment_tasks:
         state = {k: v for k, v in enrichment_tasks[task_id].items() if k != "results"}
-        storage.save_task_state(task_id, state)
+        _get_storage().save_task_state(task_id, state)
 
 
 # --- Models ---
@@ -40,7 +62,13 @@ class EnrichmentRequest(BaseModel):
 
 # --- Background task ---
 
-def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str):
+def process_enrichment(
+    task_id: str,
+    playlist_id: str,
+    owner: str,
+    api_key: str,
+    playlist_fetcher=None,
+):
     """Background task that delegates to the shared enrichment logic."""
     results: list[dict] = []
 
@@ -72,6 +100,8 @@ def process_enrichment(task_id: str, playlist_id: str, owner: str, api_key: str)
             owner=owner,
             api_key=api_key,
             on_progress=_on_progress,
+            playlist_fetcher=playlist_fetcher,
+            storage_port=_get_storage(),
         )
 
         enrichment_tasks[task_id]["status"] = "completed"
@@ -99,6 +129,21 @@ def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTas
     if not api_key:
         raise HTTPException(status_code=400, detail="API Key required")
 
+    # Build authenticated playlist fetcher from stored OAuth tokens.
+    # This is done eagerly (before the background task) so auth errors
+    # are raised synchronously and returned to the user.
+    try:
+        from song_shake.platform.storage_factory import get_token_storage
+        token_store = get_token_storage()
+        tokens = token_store.get_google_tokens(user["sub"])
+        access_token = tokens.get("access_token") if tokens else None
+        yt = get_authenticated_ytmusic(user)
+        playlist_fetcher = YTMusicPlaylistAdapter(yt=yt, access_token=access_token)
+    except HTTPException:
+        raise
+    except Exception:
+        playlist_fetcher = None  # Fall back to file-based auth (CLI)
+
     task_id = f"{request.playlist_id}_{os.urandom(4).hex()}"
     enrichment_tasks[task_id] = {
         "status": "pending",
@@ -110,13 +155,17 @@ def start_enrichment(request: EnrichmentRequest, background_tasks: BackgroundTas
     _persist_task(task_id)
 
     background_tasks.add_task(
-        process_enrichment, task_id, request.playlist_id, user["sub"], api_key
+        process_enrichment, task_id, request.playlist_id, user["sub"], api_key,
+        playlist_fetcher=playlist_fetcher,
     )
     return {"task_id": task_id}
 
 
 @router.get("/status/{task_id}")
-def get_enrichment_status(task_id: str):
+def get_enrichment_status(
+    task_id: str,
+    storage: StoragePort = Depends(get_songs_storage),
+):
     # Check in-memory first (active tasks), then fall back to persistent storage
     if task_id in enrichment_tasks:
         return enrichment_tasks[task_id]

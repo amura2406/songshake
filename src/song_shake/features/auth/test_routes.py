@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from song_shake.api import app
 from song_shake.features.auth import jwt as app_jwt
 from song_shake.features.auth.dependencies import get_current_user
+from song_shake.platform.storage_factory import get_token_storage
 
 client = TestClient(app)
 
@@ -30,6 +31,13 @@ def _make_jwt(claims=None):
         name=payload.get("name", "Test"),
         thumbnail=payload.get("thumb"),
     )
+
+
+def _make_mock_token_storage(tokens=None):
+    """Create a mock TokenStoragePort."""
+    mock = MagicMock()
+    mock.get_google_tokens.return_value = tokens
+    return mock
 
 
 # --- auth/me tests ---
@@ -108,15 +116,17 @@ class TestAuthStatus:
 class TestLogout:
     """Tests for GET /auth/logout."""
 
-    @patch("song_shake.features.auth.routes.token_store.delete_google_tokens")
-    def test_logout_clears_tokens(self, mock_delete):
+    def test_logout_clears_tokens(self):
         """Should delete stored Google tokens for the user."""
+        mock_ts = _make_mock_token_storage()
+        app.dependency_overrides[get_token_storage] = lambda: mock_ts
+
         token = _make_jwt()
         response = client.get("/auth/logout", headers={"Authorization": f"Bearer {token}"})
 
         assert response.status_code == 200
         assert response.json()["status"] == "logged_out"
-        mock_delete.assert_called_once_with("test_user_123")
+        mock_ts.delete_google_tokens.assert_called_once_with("test_user_123")
 
     def test_logout_requires_auth(self):
         """Should return 401 when not authenticated."""
@@ -130,15 +140,14 @@ class TestLogout:
 class TestRefresh:
     """Tests for GET /auth/refresh."""
 
-    @patch("song_shake.features.auth.routes.token_store.save_google_tokens")
     @patch("song_shake.features.auth.routes.requests.post")
-    @patch("song_shake.features.auth.routes.token_store.get_google_tokens")
-    def test_refresh_issues_new_jwt(self, mock_get_tokens, mock_post, mock_save):
+    def test_refresh_issues_new_jwt(self, mock_post):
         """Should refresh Google tokens and issue a new JWT."""
-        mock_get_tokens.return_value = {
+        mock_ts = _make_mock_token_storage({
             "access_token": "old_token",
             "refresh_token": "valid_refresh",
-        }
+        })
+        app.dependency_overrides[get_token_storage] = lambda: mock_ts
 
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
@@ -156,10 +165,10 @@ class TestRefresh:
         assert "token" in data
         assert data["refreshed"] is True
 
-    @patch("song_shake.features.auth.routes.token_store.get_google_tokens")
-    def test_refresh_fails_without_stored_tokens(self, mock_get_tokens):
+    def test_refresh_fails_without_stored_tokens(self):
         """Should return 401 when no stored tokens found."""
-        mock_get_tokens.return_value = None
+        mock_ts = _make_mock_token_storage(None)
+        app.dependency_overrides[get_token_storage] = lambda: mock_ts
 
         token = _make_jwt()
         response = client.get("/auth/refresh", headers={"Authorization": f"Bearer {token}"})

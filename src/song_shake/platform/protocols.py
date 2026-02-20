@@ -9,7 +9,7 @@ from typing import Protocol
 
 
 class StoragePort(Protocol):
-    """Abstract storage operations."""
+    """Abstract storage operations for songs, tracks, and enrichment history."""
 
     def wipe_db(self) -> None: ...
 
@@ -29,24 +29,78 @@ class StoragePort(Protocol):
 
     def get_enrichment_history(self, owner: str) -> dict: ...
 
+    def get_all_history(self) -> dict: ...
 
-class AudioDownloader(Protocol):
-    """Abstract audio download operations."""
+    def save_task_state(self, task_id: str, state: dict) -> None: ...
 
-    def download(self, video_id: str, output_dir: str) -> str:
-        """Download audio for a video and return the file path."""
-        ...
+    def get_task_state(self, task_id: str) -> dict | None: ...
+
+
+class JobStoragePort(Protocol):
+    """Abstract job and AI usage storage operations."""
+
+    def create_job(
+        self,
+        job_id: str,
+        job_type: "JobType",
+        playlist_id: str,
+        owner: str,
+        playlist_name: str = "",
+    ) -> dict: ...
+
+    def update_job(self, job_id: str, fields: dict) -> None: ...
+
+    def get_job(self, job_id: str) -> dict | None: ...
+
+    def get_active_jobs(self, owner: str | None = None) -> list[dict]: ...
+
+    def get_job_history(self, owner: str | None = None) -> list[dict]: ...
+
+    def get_job_for_playlist(
+        self, playlist_id: str, owner: str | None = None
+    ) -> dict | None: ...
+
+    def check_and_create_job(
+        self,
+        playlist_id: str,
+        owner: str,
+        job_id: str,
+        job_type: "JobType",
+        playlist_name: str = "",
+    ) -> dict | None: ...
+
+    def get_all_active_jobs(self) -> dict: ...
+
+    def get_ai_usage(self, owner: str) -> dict: ...
+
+    def update_ai_usage(
+        self,
+        owner: str,
+        input_tokens_delta: int,
+        output_tokens_delta: int,
+        cost_delta: float,
+    ) -> dict: ...
+
+
+class TokenStoragePort(Protocol):
+    """Abstract Google OAuth token storage per user."""
+
+    def save_google_tokens(self, user_id: str, tokens: dict) -> None: ...
+
+    def get_google_tokens(self, user_id: str) -> dict | None: ...
+
+    def delete_google_tokens(self, user_id: str) -> None: ...
 
 
 class AudioEnricher(Protocol):
     """Abstract AI enrichment operations.
 
-    Returns dict with genres, moods, instruments, bpm, and optionally
+    Returns dict with genres, moods, instruments, bpm, album, and optionally
     'usage_metadata': {'prompt_tokens': int, 'candidates_tokens': int}.
     """
 
-    def enrich(self, file_path: str, title: str, artist: str) -> dict:
-        """Enrich a track with AI-generated metadata."""
+    def enrich_by_url(self, video_id: str, title: str, artist: str) -> dict:
+        """Enrich a track via YouTube URL analysis."""
         ...
 
 

@@ -3,13 +3,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from ytmusicapi import YTMusic
 
-from song_shake.features.songs import storage
 from song_shake.features.auth import auth
 from song_shake.features.auth.dependencies import get_current_user, get_authenticated_ytmusic
-from song_shake.features.auth import token_store
-from song_shake.features.jobs import storage as job_storage
+from song_shake.platform.protocols import JobStoragePort, StoragePort, TokenStoragePort
+from song_shake.platform.storage_factory import get_jobs_storage, get_songs_storage, get_token_storage
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -34,7 +32,12 @@ class PlaylistResponse(BaseModel):
 # --- Routes ---
 
 @router.get("/playlists", response_model=List[PlaylistResponse])
-def get_playlists(user: dict = Depends(get_current_user)):
+def get_playlists(
+    user: dict = Depends(get_current_user),
+    storage: StoragePort = Depends(get_songs_storage),
+    job_store: JobStoragePort = Depends(get_jobs_storage),
+    token_store: TokenStoragePort = Depends(get_token_storage),
+):
     logger.info("get_playlists_started", user_id=user["sub"])
     yt = get_authenticated_ytmusic(user)
 
@@ -84,8 +87,8 @@ def get_playlists(user: dict = Depends(get_current_user)):
             history = storage.get_all_history()
             logger.debug("enrichment_history_keys", keys=list(history.keys()))
 
-            # Use the new Job system to find active jobs by playlist_id
-            active_jobs = job_storage.get_all_active_jobs()
+            # Use the Job system to find active jobs by playlist_id
+            active_jobs = job_store.get_all_active_jobs()
 
             for p in playlists:
                 pid = p.get("playlistId")

@@ -38,11 +38,12 @@ def _clean_job_state():
 class TestCreateJob:
     """Tests for POST /jobs."""
 
+    @patch("song_shake.features.jobs.routes.get_authenticated_ytmusic")
     @patch("song_shake.features.jobs.routes.os.urandom")
     @patch("song_shake.features.jobs.routes.os.getenv")
     @patch("song_shake.features.jobs.storage.check_and_create_job")
     def test_creates_job_with_api_key(
-        self, mock_check_create, mock_getenv, mock_urandom
+        self, mock_check_create, mock_getenv, mock_urandom, mock_auth_yt
     ):
         """Should create a job when API key is provided."""
         mock_getenv.return_value = None
@@ -63,7 +64,7 @@ class TestCreateJob:
         }
 
         response = client.post(
-            "/jobs",
+            "/api/jobs",
             json={
                 "playlist_id": "PL_test",
                 "api_key": "test-key-123",
@@ -81,7 +82,7 @@ class TestCreateJob:
         mock_getenv.return_value = None
 
         response = client.post(
-            "/jobs",
+            "/api/jobs",
             json={"playlist_id": "PL_test"},
         )
 
@@ -96,7 +97,7 @@ class TestCreateJob:
         mock_check_create.return_value = None  # Indicates duplicate found
 
         response = client.post(
-            "/jobs",
+            "/api/jobs",
             json={"playlist_id": "PL_test"},
         )
 
@@ -124,7 +125,7 @@ class TestGetJob:
             "ai_usage": {"input_tokens": 100, "output_tokens": 50, "cost": 0.001},
         }
 
-        response = client.get("/jobs/job_123")
+        response = client.get("/api/jobs/job_123")
 
         assert response.status_code == 200
         data = response.json()
@@ -140,7 +141,7 @@ class TestGetJob:
             "message": "Done",
         }
 
-        response = client.get("/jobs/old_job")
+        response = client.get("/api/jobs/old_job")
 
         assert response.status_code == 200
         assert response.json()["status"] == "completed"
@@ -150,7 +151,7 @@ class TestGetJob:
         """Should return 404 when job doesn't exist."""
         mock_get_job.return_value = None
 
-        response = client.get("/jobs/nonexistent")
+        response = client.get("/api/jobs/nonexistent")
 
         assert response.status_code == 404
 
@@ -169,7 +170,7 @@ class TestCancelJob:
         event = threading.Event()
         logic._cancel_events["job_to_cancel"] = event
 
-        response = client.post("/jobs/job_to_cancel/cancel")
+        response = client.post("/api/jobs/job_to_cancel/cancel")
 
         assert response.status_code == 200
         assert event.is_set()
@@ -179,7 +180,7 @@ class TestCancelJob:
         """Should return 404 when job not found."""
         mock_get_job.return_value = None
 
-        response = client.post("/jobs/nonexistent/cancel")
+        response = client.post("/api/jobs/nonexistent/cancel")
 
         assert response.status_code == 404
 
@@ -188,7 +189,7 @@ class TestCancelJob:
         """Should return 409 when job already finished."""
         mock_get_job.return_value = {"id": "done_job", "status": "completed"}
 
-        response = client.post("/jobs/done_job/cancel")
+        response = client.post("/api/jobs/done_job/cancel")
 
         assert response.status_code == 409
 
@@ -206,7 +207,7 @@ class TestListJobs:
             {"id": "j1", "status": "running", "playlist_id": "PL1"}
         ]
 
-        response = client.get("/jobs?status=active")
+        response = client.get("/api/jobs?status=active")
 
         assert response.status_code == 200
         data = response.json()
@@ -220,7 +221,7 @@ class TestListJobs:
             {"id": "j2", "status": "completed", "playlist_id": "PL2"}
         ]
 
-        response = client.get("/jobs?status=history")
+        response = client.get("/api/jobs?status=history")
 
         assert response.status_code == 200
         data = response.json()
@@ -239,7 +240,7 @@ class TestStreamJob:
         """Should return 404 when job not found anywhere."""
         mock_get_job.return_value = None
 
-        response = client.get("/jobs/nonexistent/stream")
+        response = client.get("/api/jobs/nonexistent/stream")
 
         assert response.status_code == 404
 
@@ -257,7 +258,7 @@ class TestStreamJob:
             "ai_usage": {"input_tokens": 500, "output_tokens": 200, "cost": 0.01},
         }
 
-        response = client.get("/jobs/job_done/stream")
+        response = client.get("/api/jobs/job_done/stream")
 
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]

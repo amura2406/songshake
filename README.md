@@ -1,250 +1,94 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.10.1)
+# Song Shake (v0.11.0)
 
-Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** is here to fix that!
+Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** enriches your YouTube Music playlists with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Counts** using **Google Gemini 3 Flash** and **YouTube Music API**.
 
-This tool takes your YouTube Music playlists and enriches them with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Count** using the power of **Google Gemini 3 Flash** and **YouTube Music API**.
+## ✨ Features
 
-## Features
-
--   **Web Interface (New!)**: Modern UI for managing enrinchment (Login, Dashboard, Progress, Results).
--   **Background Job Support**: Identify running enrichment tasks on the dashboard and resume viewing real-time progress without double-processing.
--   **Concurrent Job Safety**: Thread-safe database access, atomic job creation, and isolated temp directories prevent race conditions when running multiple enrichment jobs simultaneously.
--   **Real-Time AI Usage Tracking**: Live token count and cost updates via SSE with animated footer display.
--   **Zombie Job Recovery**: Jobs orphaned by server restart are automatically detected and cleanly cancelled.
--   **CLI Tool**: Classic command-line interface for quick operations.
--   **Rich Song Metadata**: Fetches detailed per-song data including multiple artists with individual channel links, album with browse links, release year, and play count (e.g. 3.5M, 123K).
--   **Smart Enrichment**: Uses AI to analyze audio and determine genre/mood. Core logic is fully testable via Protocol-based dependency injection.
--   **JWT-Based Authentication (New!)**: Multi-user JWT sessions with per-user Google token storage. All API routes are protected with Bearer token auth.
--   **Local Database**: Stores results in `songs.db` (TinyDB).
--   **Audio Download**: Automatically downloads tracks using `yt-dlp`.
--   **AI Enrichment**: Uses **Gemini 3 Flash Preview** to listen to audio and extract:
-    -   Genres (e.g., Pop, Indie, Rock)
-    -   Moods (e.g., Energetic, Melancholic, Chill)
-    -   Instruments (e.g., Guitar, Piano, Drums)
-    -   BPM (Beats Per Minute)
--   **Persistent Storage**: Saves enriched data to a local `songs.db` (TinyDB) with a dual-table deduplication architecture:
-    -   `songs`: A global catalog storing processed tracks to avoid redundant LLM analysis across users.
-    -   `user_songs`: A relational table linking individual users to specific tracks in the global catalog.
--   **Retry Failed Tracks (New!)**: Per-track retry button for songs that failed enrichment. Handles UNPLAYABLE videos (auto-searches for playable alternative), replaced/gone video IDs (detects title mismatch and falls back to search), and transient errors. Metadata is re-fetched from the correct source.
--   **Resilient Processing**: Tracks that fail to enrich are still saved and visually flagged, ensuring complete playlist visibility.
--   **Cost Tracking**: Tracks Gemini API token usage and estimated cost in real-time during enrichment.
--   **Smart Filtering**: Filter by specific Genres, Moods, Instruments, or Enrichment Status directly on the Results page. Filter by BPM range as well.
-
-## Workflow
-
-```mermaid
-graph TD
-    A[User] -->|Auth| B(YouTube Music)
-    A -->|Enrich Playlist| C[Song Shake CLI / Web]
-    C -->|Check Local DB First| F[TinyDB songs.db]
-    C -->|Fetch Tracks| B
-    C -->|Download Audio If New| D[yt-dlp]
-    D -->|Audio File| E[Gemini 3 Flash]
-    E -->|Metadata JSON| F
-    F -->|Link to User| U[user_songs Table]
-```
-
-## Prerequisites
-
-1.  **Python 3.11+**
-2.  **uv** (Modern Python package manager)
-    -   Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-    -   Or via Brew: `brew install uv`
-3.  **ffmpeg** (Required for audio processing)
-    -   Install: `brew install ffmpeg`
-
-## Installation
-
-You can install Song Shake globally using `uv tool`:
-
-```bash
-# Install directly from source/directory
-uv tool install . --force
-
-# Or if it were on PyPI (not yet)
-# uv tool install song-shake
-```
-
-To update later:
-```bash
-uv tool upgrade song-shake
-```
-
-## Usage
-
-### 1. Authentication
-
-First, setup your YouTube Music headers (required to access your playlists).
-
-```bash
-song-shake setup-auth
-```
-
-*   Go to `music.youtube.com`
-*   Open DevTools (F12) > Network
-*   Filter for `browse`
-*   Refresh page
-*   Right-click a request > Copy > Copy Request Headers
-*   Paste into the terminal
-
-### 1a. (Alternative) Web Interface Login
-For a smoother experience with the Web UI:
-1.  Create a **Web Application** credential in Google Cloud Console.
-2.  Set **Authorized Redirect URI** to `http://localhost:8000/auth/google/callback`.
-3.  Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to your `.env` file.
-4.  Click **"Login with Google"** on the dashboard.
-
-### 2. List Playlists
-
-Find the playlist you want to process.
-
-```bash
-song-shake list-playlists
-```
-
-Copy the **ID** of your desired playlist.
-
-### 3. Enrich Playlist
-
-Process the playlist. This will download tracks, send to Gemini, and save results.
-
-```bash
-song-shake enrich <PLAYLIST_ID>
-```
-
-**Options:**
--   `--wipe` / `-w`: Wipe the database before starting (fresh start).
-
-Example:
-```bash
-song-shake enrich PL12345... --wipe
-```
-
-### 4. Show Enriched Songs
-
-View the tracks currently stored in your local database.
-
-```bash
-song-shake show [OPTIONS]
-```
-
-**Options:**
--   `--limit` / `-l`: Number of rows to show (default: 100).
--   `--genre` / `-g`: Filter by genre (case-insensitive).
--   `--mood` / `-m`: Filter by mood (case-insensitive).
-
-Example:
-```bash
-song-shake show --genre "Pop" --limit 50
-```
+- **Web Interface**: Modern Vue.js UI with Google OAuth login, real-time enrichment progress, and interactive results.
+- **URL-Based AI Enrichment**: Gemini analyzes tracks via YouTube URL — no audio download needed.
+- **Rich Metadata**: Artists with channel links, album with browse links, release year, play count, BPM, and vocal type.
+- **Smart Deduplication**: Global song catalog avoids redundant AI calls — 0-token cost for previously analyzed tracks.
+- **Retry Failed Tracks**: Per-track retry with UNPLAYABLE fallback (finds playable alternative via search).
+- **Background Jobs**: Concurrent-safe enrichment with real-time progress via polling.
+- **Firestore Storage** (production) / TinyDB (local development).
+- **CLI Tool**: Classic command-line interface for quick operations.
 
 ## 🏗 Architecture
 
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for development vs production diagrams and component descriptions.
+
 ```mermaid
 graph TD
-    User[User] -->|Browser| Frontend[React Frontend]
-    User -->|Terminal| CLI[CLI Tool]
-    
+    User ---->|Browser| Frontend[Vue.js Frontend]
+    User ---->|Terminal| CLI[CLI Tool]
     Frontend -->|REST API| Backend[FastAPI Backend]
     CLI -->|Library Calls| Core[Core Logic]
     Backend -->|Library Calls| Core
-    
-    subgraph "Song Shake Core"
-        Core --> Auth[Auth Module]
-        Core -->|via PlaylistFetcher| Playlist[Playlist Fetcher]
-        Core -->|via AudioEnricher| Enrichment[AI Enrichment]
-        Core -->|via AudioDownloader| Download[Audio Downloader]
-        Core -->|via StoragePort| Storage[TinyDB Storage]
-    end
-    
-    Auth -->|OAuth2| Google[Google Identity]
-    Playlist -->|Internal API| YTMusic[YouTube Music API]
-    Playlist -->|Fallback| DataAPI[YouTube Data API v3]
-    Enrichment -->|Analyze| Gemini[Google Gemini AI]
-    
-    Storage -->|Persist| DB[(songs.db)]
-    Auth -->|Persist| TokenDB[(tokens.db)]
+    Core -->|via SongFetcher| YTMusic[YouTube Music API]
+    Core -->|via AudioEnricher| Gemini[Gemini 3 Flash]
+    Core -->|via StoragePort| DB[(Firestore / TinyDB)]
 ```
 
-## 🧩 Components
+## 🚀 Quick Start
 
-### 1. Command Line Interface (CLI)
-The original power-user tool.
-- **Usage**: `song-shake [COMMAND]`
-- **Features**: Auth management, playlist processing, searching, and exporting.
-- **Best for**: Headless servers,cron jobs, or quick terminal checks.
+### Prerequisites
 
-### 2. Backend API
-A FastAPI-based server that exposes the core logic to the web.
-- **Port**: 8000
-- **Docs**: `http://localhost:8000/docs`
-- **Key Features**: 
-    - Real-time SSE stream for enrichment logs.
-    - Robust OAuth flow (Web Application).
-    - Intelligent fallback to YouTube Data API for channel-less accounts.
+1. **Python 3.11+** with **uv** (`brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`)
+2. **Node.js 18+** (for frontend)
 
-### 3. Frontend (Web UI)
-A modern, responsive React application.
-- **Port**: 5173 (Vite)
-- **Features**:
-    - "Login with Google" integration with graceful session expiration handling.
-    - Dashboard with playlist selection, processing history, and relative time badges.
-    - Real-time progress visualization with live API token and cost tracking.
-    - Rich, interactive results view with playback and advanced tag/status filtering.
+### Development
 
-## ⚠️ Gotchas & Pitfalls
-
-### 1. The "No Channel" Issue
-**Problem**: The internal YouTube Music API (used by `ytmusicapi`) fails if the Google Account doesn't have a YouTube Channel created, returning `400 Bad Request`.
-**Solution**: Song Shake implements a **smart fallback**. If the internal API fails, it automatically switches to the public **YouTube Data API v3** using the same credentials. This allows users without a channel (e.g., pure GSuite or standard Gmail users) to still fetch their playlists and tracks perfectly.
-
-### 2. Authentication Flow
-- **CLI**: Uses Browser Header Paste (copy request headers from DevTools and paste into the terminal).
-- **Web**: Uses JWT-based sessions. Google OAuth tokens are stored per-user in TinyDB; the app issues JWTs for session management.
-- **Session Duration**: JWTs are valid for 24 hours and automatically refresh.
-
-### 4. Database Deduplication (New in v0.5)
-**Problem**: Processing the same song for multiple users wastes LLM tokens and time.
-**Solution**: Song Shake now utilizes a dual-table architecture in TinyDB. Before downloading or sending a track to Gemini, it queries the `songs` catalog. If the `videoId` already exists globally, it skips the LLM and instantly links the track to the user's `user_songs` record, resulting in a **0-token cost** hit!
-- **YouTube Data API**: Has a quota (default 10,000 units/day). Listing playlists is cheap (1 unit), but heavy usage might hit limits.
-- **Gemini**: The Flash model is fast and cheap, but ensure your `GOOGLE_API_KEY` has billing enabled for sustained high-volume usage.
-
-## 🚀 Development
-
-### Backend
 ```bash
+# Backend
+cp .env.template .env   # Fill in your API keys
+uv sync
 uv run uvicorn song_shake.api:app --reload --port 8000
+
+# Frontend (separate terminal)
+cd web && npm install && npm run dev
 ```
 
-### Frontend
+Open http://localhost:5173 and login with Google.
+
+### Configuration (`.env`)
+
+| Variable             | Required | Description                           |
+|----------------------|----------|---------------------------------------|
+| `GOOGLE_API_KEY`     | Yes      | Gemini API key for AI enrichment      |
+| `GOOGLE_CLIENT_ID`   | Yes      | Google OAuth Web Client ID            |
+| `GOOGLE_CLIENT_SECRET` | Yes    | Google OAuth Web Client Secret        |
+| `JWT_SECRET`         | Prod     | JWT signing secret (auto-generated in dev) |
+| `STORAGE_BACKEND`    | No       | `firestore` or `tinydb` (default: tinydb) |
+
+## 🚢 Deployment
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production deployment to Cloud Run + Firebase Hosting.
+
 ```bash
-cd web
-npm run dev
+# Quick deploy (backend + frontend)
+./deploy.sh
+
+# Backend only
+./deploy.sh --backend-only
+
+# Frontend only
+./deploy.sh --frontend-only
 ```
 
-### CLI
-```bash
-song-shake --help
-```
+## ⚠️ Gotchas
 
-## Configuration
+### The "No Channel" Issue
+The internal YouTube Music API fails if the Google Account lacks a YouTube Channel. Song Shake implements a **smart fallback** to the public YouTube Data API v3 using the same credentials.
 
-The tool uses `.env` file for credentials (see `.env.template`):
--   `GOOGLE_API_KEY`: Your Gemini API Key (required for enrichment).
--   `GOOGLE_CLIENT_ID`: Google OAuth Web Application Client ID (optional, for Web UI login).
--   `GOOGLE_CLIENT_SECRET`: Google OAuth Web Application Client Secret (optional, for Web UI login).
--   `JWT_SECRET`: Secret key for signing session JWTs. Auto-generated in development; **required** in production.
-    -   Generate with: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
+### Session Management
+- **Web**: JWT sessions (24h) with automatic Google token refresh.
+- **CLI**: Browser header paste authentication.
 
-If `GOOGLE_API_KEY` is missing, the CLI will prompt you to enter it.
-
-## Quirks & Notes
-
--   **Gemini 3 Flash Preview**: This model is in preview. Pricing is approx $1.00/1M input audio tokens.
--   **Audio Only**: The tool strictly downloads audio to save bandwidth and tokens.
--   **Cookies**: Authentication relies on browser cookies which may expire. If auth fails, just run `setup-auth` again.
+### Cost Awareness
+- **Gemini**: ~$0.10/1M input tokens, ~$0.40/1M output tokens (Flash). A 100-song playlist typically costs $0.01–$0.05.
+- **YouTube Data API**: 10,000 units/day quota (listing playlists = 1 unit).
 
 ## License
 

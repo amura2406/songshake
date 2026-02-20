@@ -44,6 +44,7 @@ const Results = () => {
   const [songs, setSongs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
+  const [totalSongs, setTotalSongs] = useState(0);
   const [currentSong, setCurrentSong] = useState(null);
   const [tags, setTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
@@ -54,7 +55,9 @@ const Results = () => {
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [retrying, setRetrying] = useState({});  // videoId → 'loading' | 'done' | 'error'
+  const [toast, setToast] = useState(null);  // { message, type }
   const limit = 50;
+  const totalPages = Math.max(1, Math.ceil(totalSongs / limit));
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -131,11 +134,14 @@ const Results = () => {
     try {
       setLoading(true);
       const tagsString = queryTags.length > 0 ? queryTags.join(',') : null;
-      const data = await getSongs(page * limit, limit, tagsString, queryBpm.min, queryBpm.max);
-      // Filter out songs without valid data
-      const validSongs = data.filter(s => s.videoId);
+      const response = await getSongs(page * limit, limit, tagsString, queryBpm.min, queryBpm.max);
+      // Support both new { items, total } format and legacy array format
+      const items = response.items || response;
+      const total = response.total ?? items.length;
+      const validSongs = (Array.isArray(items) ? items : []).filter(s => s.videoId);
       setSongs(validSongs);
-      setFilteredSongs(validSongs); // Backend handles filtering now
+      setFilteredSongs(validSongs);
+      setTotalSongs(total);
     } catch (error) {
       console.error("Failed to load songs", error);
     } finally {
@@ -174,11 +180,21 @@ const Results = () => {
 
 
 
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const handlePlayerReady = (event) => {
     setPlayerContext(event.target);
     const dur = event.target.getDuration();
     setDuration(dur || 0);
     setIsPlaying(true);
+  };
+
+  const handlePlayerError = () => {
+    showToast('Preview unavailable — this track cannot be embedded. Click the title to open on YouTube Music.', 'warning');
+    stopPlayback();
   };
 
   const handlePlayerStateChange = (event) => {
@@ -451,9 +467,9 @@ const Results = () => {
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-4">
                           <div className="album-art-wrapper relative flex-shrink-0">
-                            {song.thumbnails?.[0]?.url ? (
+                            {song.thumbnails?.length > 0 ? (
                               <img
-                                src={song.thumbnails[0].url}
+                                src={song.thumbnails[song.thumbnails.length - 1].url}
                                 alt={song.title}
                                 referrerPolicy="no-referrer"
                                 className="h-12 w-12 rounded-full bg-surface-dark object-cover"
@@ -620,12 +636,32 @@ const Results = () => {
 
       </div>
 
+      {/* ── Toast Notification ── */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            transition={{ duration: 0.3 }}
+            className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-xs font-medium shadow-lg backdrop-blur-xl border ${toast.type === 'warning'
+                ? 'bg-amber-500/20 border-amber-500/30 text-amber-200'
+                : 'bg-white/10 border-white/20 text-white'
+              }`}
+          >
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Fixed Status Bar ── */}
       <div className="status-bar">
         {/* Left: track count */}
         <div className="status-bar__left">
           <p className="text-xs text-slate-500 whitespace-nowrap">
-            Showing <span className="text-white font-medium">{songs.length > 0 ? page * limit + 1 : 0}</span> to <span className="text-white font-medium">{Math.min((page + 1) * limit, page * limit + songs.length)}</span> tracks
+            Songs: <span className="text-white font-medium">{totalSongs}</span>
+            {' · '}
+            <span className="text-white font-medium">{songs.length > 0 ? page * limit + 1 : 0}</span>–<span className="text-white font-medium">{Math.min((page + 1) * limit, page * limit + songs.length)}</span>
           </p>
         </div>
 
@@ -644,6 +680,7 @@ const Results = () => {
                   }}
                   onReady={handlePlayerReady}
                   onStateChange={handlePlayerStateChange}
+                  onError={handlePlayerError}
                 />
               </div>
 
@@ -691,6 +728,7 @@ const Results = () => {
 
         {/* Right: pagination */}
         <div className="status-bar__right">
+          <span className="text-[10px] text-slate-500 mr-1">{page + 1}/{totalPages}</span>
           <button
             disabled={page === 0}
             onClick={() => setPage(p => Math.max(0, p - 1))}
@@ -702,7 +740,7 @@ const Results = () => {
             <span className="w-7 h-7 flex items-center justify-center rounded bg-primary text-white text-xs font-bold shadow-neon">{page + 1}</span>
           </div>
           <button
-            disabled={songs.length < limit}
+            disabled={page + 1 >= totalPages}
             onClick={() => setPage(p => p + 1)}
             className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
           >

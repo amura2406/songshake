@@ -9,8 +9,9 @@ import threading
 from datetime import datetime, timezone
 
 from song_shake.features.enrichment import enrichment
-from song_shake.features.jobs import storage as job_storage
 from song_shake.features.jobs.models import JobStatus
+from song_shake.platform.protocols import JobStoragePort
+from song_shake.platform.storage_factory import get_jobs_storage
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -58,18 +59,33 @@ class CancelledError(Exception):
     """Raised when a job is cancelled."""
 
 
-def run_enrichment_job(job_id: str, playlist_id: str, owner: str, api_key: str, wipe: bool = False) -> None:
+def run_enrichment_job(
+    job_id: str,
+    playlist_id: str,
+    owner: str,
+    api_key: str,
+    wipe: bool = False,
+    job_store: JobStoragePort | None = None,
+    playlist_fetcher=None,
+) -> None:
     """Run the enrichment process as a background job.
 
-    Updates the Job record in TinyDB on each progress tick and on
+    Updates the Job record on each progress tick and on
     completion/error/cancellation.
+
+    Args:
+        job_store: Optional JobStoragePort adapter. Falls back to factory
+            default when not provided (production default).
     """
+    if job_store is None:
+        job_store = get_jobs_storage()
+
     cancel_event = threading.Event()
     with _live_state_lock:
         _cancel_events[job_id] = cancel_event
 
     # Load persisted all-time AI usage as the baseline for live updates
-    baseline_usage = job_storage.get_ai_usage(owner)
+    baseline_usage = job_store.get_ai_usage(owner)
     baseline_tokens_in = baseline_usage.get("input_tokens", 0)
     baseline_tokens_out = baseline_usage.get("output_tokens", 0)
     baseline_cost = baseline_usage.get("cost", 0.0)
@@ -153,9 +169,22 @@ def run_enrichment_job(job_id: str, playlist_id: str, owner: str, api_key: str, 
                 "cost": current_live["cost"] + delta_cost,
             }
 
-        # Persist periodically (every 5 tracks or on first/last)
+        # Persist AI usage deltas to the shared ai_usage collection
+        # on every track so the SSE stream picks up changes across
+        # Cloud Run instances (SSE may route to a different instance).
+        if delta_tokens > 0 or delta_cost > 0:
+            try:
+                updated = job_store.update_ai_usage(
+                    owner, delta_tokens, 0, delta_cost,
+                )
+                with _live_state_lock:
+                    _ai_usage_live[owner] = updated
+            except Exception:
+                pass  # Best-effort — final update at job end is the source of truth
+
+        # Persist job progress periodically (every 5 tracks or on first/last)
         if current == 0 or current == total or current % 5 == 0:
-            job_storage.update_job(job_id, {
+            job_store.update_job(job_id, {
                 "status": JobStatus.RUNNING.value,
                 "total": total,
                 "current": current,
@@ -171,7 +200,7 @@ def run_enrichment_job(job_id: str, playlist_id: str, owner: str, api_key: str, 
             playlist_id=playlist_id,
             owner=owner,
         )
-        job_storage.update_job(job_id, {"status": JobStatus.RUNNING.value})
+        job_store.update_job(job_id, {"status": JobStatus.RUNNING.value})
 
         enrichment.process_playlist(
             playlist_id=playlist_id,
@@ -180,6 +209,7 @@ def run_enrichment_job(job_id: str, playlist_id: str, owner: str, api_key: str, 
             api_key=api_key,
             on_progress=_on_progress,
             cancel_check=_cancel_check,
+            playlist_fetcher=playlist_fetcher,
         )
 
         final_status = JobStatus.COMPLETED.value
@@ -207,23 +237,15 @@ def run_enrichment_job(job_id: str, playlist_id: str, owner: str, api_key: str, 
             "ai_usage": job_ai_usage.copy(),
         }
 
-    job_storage.update_job(job_id, {
+    job_store.update_job(job_id, {
         "status": final_status,
         "message": final_message,
         "errors": job_errors,
         "ai_usage": job_ai_usage,
     })
 
-    # Update all-time AI usage
-    try:
-        tokens_in = job_ai_usage.get("input_tokens", 0)
-        cost_total = job_ai_usage.get("cost", 0.0)
-        if tokens_in > 0 or cost_total > 0:
-            updated = job_storage.update_ai_usage(owner, tokens_in, 0, cost_total)
-            with _live_state_lock:
-                _ai_usage_live[owner] = updated
-    except Exception as e:
-        logger.error("ai_usage_update_failed", job_id=job_id, error=str(e))
+    # AI usage is already persisted incrementally per-track in _on_progress.
+    # No final update_ai_usage call needed — it would double-count tokens.
 
     # Cleanup in-memory cancel event
     with _live_state_lock:
@@ -235,17 +257,21 @@ def run_retry_job(
     owner: str,
     api_key: str,
     video_ids: list[str] | None = None,
+    job_store: JobStoragePort | None = None,
 ) -> None:
     """Run the retry process as a background job.
 
     Wraps ``retry_failed_tracks`` with the same lifecycle management
     as ``run_enrichment_job``.
     """
+    if job_store is None:
+        job_store = get_jobs_storage()
+
     cancel_event = threading.Event()
     with _live_state_lock:
         _cancel_events[job_id] = cancel_event
 
-    baseline_usage = job_storage.get_ai_usage(owner)
+    baseline_usage = job_store.get_ai_usage(owner)
 
     with _live_state_lock:
         _job_live_state[job_id] = {
@@ -314,7 +340,7 @@ def run_retry_job(
             }
 
         if current == 0 or current == total or current % 5 == 0:
-            job_storage.update_job(job_id, {
+            job_store.update_job(job_id, {
                 "status": JobStatus.RUNNING.value,
                 "total": total,
                 "current": current,
@@ -325,7 +351,7 @@ def run_retry_job(
 
     try:
         logger.info("retry_job_started", job_id=job_id, owner=owner)
-        job_storage.update_job(job_id, {"status": JobStatus.RUNNING.value})
+        job_store.update_job(job_id, {"status": JobStatus.RUNNING.value})
 
         enrichment.retry_failed_tracks(
             owner=owner,
@@ -333,6 +359,7 @@ def run_retry_job(
             on_progress=_on_progress,
             cancel_check=_cancel_check,
             video_ids=video_ids,
+            storage_port=get_songs_storage(),
         )
 
         final_status = JobStatus.COMPLETED.value
@@ -359,7 +386,7 @@ def run_retry_job(
             "ai_usage": job_ai_usage.copy(),
         }
 
-    job_storage.update_job(job_id, {
+    job_store.update_job(job_id, {
         "status": final_status,
         "message": final_message,
         "errors": job_errors,
@@ -370,7 +397,7 @@ def run_retry_job(
         tokens_in = job_ai_usage.get("input_tokens", 0)
         cost_total = job_ai_usage.get("cost", 0.0)
         if tokens_in > 0 or cost_total > 0:
-            updated = job_storage.update_ai_usage(owner, tokens_in, 0, cost_total)
+            updated = job_store.update_ai_usage(owner, tokens_in, 0, cost_total)
             with _live_state_lock:
                 _ai_usage_live[owner] = updated
     except Exception as e:

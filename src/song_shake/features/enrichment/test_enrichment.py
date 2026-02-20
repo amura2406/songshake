@@ -72,27 +72,6 @@ class FakePlaylistFetcher:
         return "Test Playlist"
 
 
-class FakeDownloader:
-    """Returns a fake filepath. Records calls."""
-
-    def __init__(self):
-        self.calls: list[str] = []
-
-    def download(self, video_id: str, output_dir: str) -> str:
-        self.calls.append(video_id)
-        return f"{output_dir}/{video_id}.mp3"
-
-
-class FakeDownloaderRaises:
-    """Simulates a download failure."""
-
-    def __init__(self, error_msg: str = "Download failed"):
-        self.error_msg = error_msg
-
-    def download(self, video_id: str, output_dir: str) -> str:
-        raise RuntimeError(self.error_msg)
-
-
 class FakeEnricher:
     """Returns pre-configured enrichment result. Records calls."""
 
@@ -106,8 +85,8 @@ class FakeEnricher:
         }
         self.calls: list[tuple[str, str, str]] = []
 
-    def enrich(self, file_path: str, title: str, artist: str) -> dict:
-        self.calls.append((file_path, title, artist))
+    def enrich_by_url(self, video_id: str, title: str, artist: str) -> dict:
+        self.calls.append((video_id, title, artist))
         # Return a copy so each call gets its own dict
         return dict(self._result)
 
@@ -115,7 +94,7 @@ class FakeEnricher:
 class FakeEnricherError:
     """Returns enrichment result with an error."""
 
-    def enrich(self, file_path: str, title: str, artist: str) -> dict:
+    def enrich_by_url(self, video_id: str, title: str, artist: str) -> dict:
         return {
             "genres": ["Error"],
             "moods": ["Error"],
@@ -324,7 +303,6 @@ class TestProcessPlaylist:
         tracks = [_make_track("v1", "Song A", "Art A"), _make_track("v2", "Song B", "Art B")]
         storage = FakeStorage()
         fetcher = FakePlaylistFetcher(tracks)
-        downloader = FakeDownloader()
         enricher = FakeEnricher()
 
         results = process_playlist(
@@ -332,7 +310,6 @@ class TestProcessPlaylist:
             owner="tester",
             storage_port=storage,
             playlist_fetcher=fetcher,
-            audio_downloader=downloader,
             audio_enricher=enricher,
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -340,7 +317,6 @@ class TestProcessPlaylist:
 
         assert len(results) == 2
         assert all(r["status"] == "success" for r in results)
-        assert len(downloader.calls) == 2
         assert len(enricher.calls) == 2
         # Both tracks saved in storage
         assert storage.get_track_by_id("v1") is not None
@@ -351,7 +327,6 @@ class TestProcessPlaylist:
         tracks = [_make_track("cached1", "Old Song")]
         existing = {"cached1": {"videoId": "cached1", "title": "Old Song", "genres": ["Rock"]}}
         storage = FakeStorage(existing_tracks=existing)
-        downloader = FakeDownloader()
         enricher = FakeEnricher()
 
         results = process_playlist(
@@ -359,7 +334,6 @@ class TestProcessPlaylist:
             owner="user",
             storage_port=storage,
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=downloader,
             audio_enricher=enricher,
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -367,7 +341,6 @@ class TestProcessPlaylist:
 
         # Cached track is re-saved (owner link) but not downloaded or enriched
         assert len(results) == 0  # cached tracks aren't appended to results
-        assert len(downloader.calls) == 0
         assert len(enricher.calls) == 0
 
     def test_mixed_cached_and_new(self):
@@ -375,7 +348,6 @@ class TestProcessPlaylist:
         tracks = [_make_track("cached", "Old"), _make_track("new1", "New")]
         existing = {"cached": {"videoId": "cached", "title": "Old"}}
         storage = FakeStorage(existing_tracks=existing)
-        downloader = FakeDownloader()
         enricher = FakeEnricher()
 
         results = process_playlist(
@@ -383,7 +355,6 @@ class TestProcessPlaylist:
             owner="user",
             storage_port=storage,
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=downloader,
             audio_enricher=enricher,
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -391,8 +362,6 @@ class TestProcessPlaylist:
 
         assert len(results) == 1
         assert results[0]["videoId"] == "new1"
-        assert len(downloader.calls) == 1
-        assert downloader.calls[0] == "new1"
 
     def test_empty_playlist(self):
         """Should return empty list when playlist has no tracks."""
@@ -401,7 +370,6 @@ class TestProcessPlaylist:
             "PL_EMPTY",
             storage_port=storage,
             playlist_fetcher=FakePlaylistFetcher([]),
-            audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -412,7 +380,6 @@ class TestProcessPlaylist:
         """Should save track with error status when enricher returns error."""
         tracks = [_make_track("err1", "Bad Song")]
         storage = FakeStorage()
-        downloader = FakeDownloader()
         enricher = FakeEnricherError()
 
         results = process_playlist(
@@ -420,7 +387,6 @@ class TestProcessPlaylist:
             owner="user",
             storage_port=storage,
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=downloader,
             audio_enricher=enricher,
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -432,32 +398,34 @@ class TestProcessPlaylist:
         # Track still saved to storage
         assert storage.get_track_by_id("err1") is not None
 
-    def test_download_failure(self):
-        """Should catch download exception and save error track."""
-        tracks = [_make_track("dl_fail", "Crash Song")]
+    def test_enrichment_exception(self):
+        """Should catch enrichment exception and save error track."""
+        tracks = [_make_track("enr_fail", "Crash Song")]
         storage = FakeStorage()
 
+        class RaisingEnricher:
+            def enrich_by_url(self, video_id, title, artist):
+                raise RuntimeError("Gemini API timeout")
+
         results = process_playlist(
-            "PL_DL_FAIL",
+            "PL_ENR_FAIL",
             owner="user",
             storage_port=storage,
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=FakeDownloaderRaises("Network timeout"),
-            audio_enricher=FakeEnricher(),
+            audio_enricher=RaisingEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(results) == 1
         assert results[0]["status"] == "error"
-        assert "Network timeout" in results[0]["error_message"]
+        assert "Gemini API timeout" in results[0]["error_message"]
 
     def test_wipe_flag(self):
         """Should re-process cached tracks when wipe=True (skip dedup)."""
         tracks = [_make_track("v1", "Song A", "Art A")]
         existing = {"v1": {"videoId": "v1", "title": "Old Song", "genres": ["Rock"]}}
         storage = FakeStorage(existing_tracks=existing)
-        downloader = FakeDownloader()
         enricher = FakeEnricher()
 
         results = process_playlist(
@@ -466,7 +434,6 @@ class TestProcessPlaylist:
             wipe=True,
             storage_port=storage,
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=downloader,
             audio_enricher=enricher,
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -474,7 +441,6 @@ class TestProcessPlaylist:
 
         # wipe=True means the track is re-processed even though it was cached
         assert len(results) == 1
-        assert len(downloader.calls) == 1
         assert len(enricher.calls) == 1
         # wipe_db should NOT be called (we skip dedup, not wipe DB)
         assert storage.wipe_called is False
@@ -493,7 +459,6 @@ class TestProcessPlaylist:
             on_progress=on_progress,
             storage_port=FakeStorage(),
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -511,20 +476,17 @@ class TestProcessPlaylist:
     def test_track_without_video_id_skipped(self):
         """Should skip tracks that have no videoId."""
         tracks = [{"title": "No ID Track", "artists": []}]
-        downloader = FakeDownloader()
 
         results = process_playlist(
             "PL_NOID",
             storage_port=FakeStorage(),
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=downloader,
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
         )
 
         assert len(results) == 0
-        assert len(downloader.calls) == 0
 
     def test_enrichment_history_saved(self):
         """Should save enrichment history on completion."""
@@ -536,7 +498,6 @@ class TestProcessPlaylist:
             owner="historian",
             storage_port=storage,
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -557,7 +518,6 @@ class TestProcessPlaylist:
             on_progress=lambda d: progress_calls.append(d),
             storage_port=FakeStorage(),
             playlist_fetcher=FakePlaylistFetcher(tracks),
-            audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher({
                 "genres": ["Jazz"],
                 "moods": ["Chill"],
@@ -606,7 +566,6 @@ class TestRetryFailedTracks:
         result = retry_failed_tracks(
             owner="user",
             storage_port=storage,
-            audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -624,12 +583,10 @@ class TestRetryFailedTracks:
         """UNPLAYABLE track should use search_playable_alternative."""
         t1 = self._make_failed_track("v1", "Unavailable Song")
         storage = FakeStorage({"v1": t1})
-        downloader = FakeDownloader()
 
         result = retry_failed_tracks(
             owner="user",
             storage_port=storage,
-            audio_downloader=downloader,
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(playable=False),
             album_fetcher=FakeAlbumFetcher(),
@@ -637,8 +594,6 @@ class TestRetryFailedTracks:
 
         assert len(result) == 1
         assert result[0]["status"] == "success"
-        # Downloader should use alternative videoId
-        assert downloader.calls == ["ALT_VIDEO_ID"]
         # Storage should keep original videoId
         assert storage._tracks["v1"]["videoId"] == "v1"
 
@@ -648,21 +603,21 @@ class TestRetryFailedTracks:
         t2 = self._make_failed_track("v2", "Bad Track")
         storage = FakeStorage({"v1": t1, "v2": t2})
 
-        class SelectiveDownloader:
-            def __init__(self):
-                self.calls = []
-
-            def download(self, video_id, output_dir):
-                self.calls.append(video_id)
+        class SelectiveEnricher:
+            """Enricher that fails for specific video IDs."""
+            def enrich_by_url(self, video_id, title, artist):
                 if video_id == "v2":
-                    raise RuntimeError("Download failed again")
-                return f"{output_dir}/{video_id}.mp3"
+                    raise RuntimeError("Enrichment failed")
+                return {
+                    "genres": ["Pop"], "moods": ["Happy"],
+                    "instruments": ["Guitar"], "bpm": 120,
+                    "usage_metadata": {"prompt_tokens": 100, "candidates_tokens": 50},
+                }
 
         result = retry_failed_tracks(
             owner="user",
             storage_port=storage,
-            audio_downloader=SelectiveDownloader(),
-            audio_enricher=FakeEnricher(),
+            audio_enricher=SelectiveEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
         )
@@ -680,7 +635,6 @@ class TestRetryFailedTracks:
         result = retry_failed_tracks(
             owner="user",
             storage_port=storage,
-            audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -698,7 +652,6 @@ class TestRetryFailedTracks:
             owner="user",
             video_ids=["v1"],
             storage_port=storage,
-            audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -719,7 +672,6 @@ class TestRetryFailedTracks:
             owner="user",
             on_progress=lambda p: progress_data.append(p),
             storage_port=storage,
-            audio_downloader=FakeDownloader(),
             audio_enricher=FakeEnricher(),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -732,7 +684,6 @@ class TestRetryFailedTracks:
         """Video replaced on YouTube should detect title mismatch and search."""
         t1 = self._make_failed_track("v1", "Time Goes By")
         storage = FakeStorage({"v1": t1})
-        downloader = FakeDownloader()
 
         # get_song("v1") returns a DIFFERENT title → video was replaced.
         # get_song("ALT_VIDEO_ID") returns correct metadata for the alt.
@@ -747,7 +698,6 @@ class TestRetryFailedTracks:
         result = retry_failed_tracks(
             owner="user",
             storage_port=storage,
-            audio_downloader=downloader,
             audio_enricher=FakeEnricher(),
             song_fetcher=fetcher,
             album_fetcher=FakeAlbumFetcher(),
@@ -755,8 +705,6 @@ class TestRetryFailedTracks:
 
         assert len(result) == 1
         assert result[0]["status"] == "success"
-        # Should download from the alternative, not the replaced original
-        assert downloader.calls == ["ALT_VIDEO_ID"]
         # Title should remain the stored original
         assert result[0]["title"] == "Time Goes By"
         # Metadata should come from the alternative video

@@ -1,7 +1,7 @@
 """Authentication routes for Song Shake API.
 
 Handles Google OAuth login flow, JWT-based session management, and user
-profile lookup. Google OAuth tokens are stored per-user in TinyDB; the app
+profile lookup. Google OAuth tokens are stored per-user; the app
 issues its own JWT for session management.
 """
 
@@ -14,8 +14,9 @@ from fastapi.responses import RedirectResponse
 from urllib.parse import urlencode
 
 from song_shake.features.auth import jwt as app_jwt
-from song_shake.features.auth import token_store
 from song_shake.features.auth.dependencies import get_current_user
+from song_shake.platform.protocols import TokenStoragePort
+from song_shake.platform.storage_factory import get_token_storage
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -107,7 +108,10 @@ def google_auth_login():
 
 
 @router.get("/google/callback")
-def google_auth_callback(code: str):
+def google_auth_callback(
+    code: str,
+    ts: TokenStoragePort = Depends(get_token_storage),
+):
     """Exchange authorization code for tokens, store per-user, issue JWT."""
     logger.info("google_auth_callback_started")
     client_id = os.getenv("GOOGLE_CLIENT_ID")
@@ -151,8 +155,8 @@ def google_auth_callback(code: str):
     user_name = profile["name"]
     user_thumb = profile.get("thumbnail")
 
-    # Store Google tokens per-user in TinyDB
-    token_store.save_google_tokens(user_id, tokens)
+    # Store Google tokens per-user
+    ts.save_google_tokens(user_id, tokens)
 
     # Issue app JWT
     jwt_token = app_jwt.create_access_token(
@@ -209,7 +213,10 @@ def auth_status(authorization: str = Header(default="")):
 
 
 @router.get("/refresh")
-def refresh_auth(user: dict = Depends(get_current_user)):
+def refresh_auth(
+    user: dict = Depends(get_current_user),
+    ts: TokenStoragePort = Depends(get_token_storage),
+):
     """Refresh the Google token and issue a new app JWT.
 
     The frontend should call this when it gets a 401 or proactively before
@@ -218,7 +225,7 @@ def refresh_auth(user: dict = Depends(get_current_user)):
     logger.info("refresh_auth_started", user_id=user["sub"])
     user_id = user["sub"]
 
-    tokens = token_store.get_google_tokens(user_id)
+    tokens = ts.get_google_tokens(user_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="No stored Google tokens")
 
@@ -255,7 +262,7 @@ def refresh_auth(user: dict = Depends(get_current_user)):
     if "refresh_token" in new_tokens:
         tokens["refresh_token"] = new_tokens["refresh_token"]
 
-    token_store.save_google_tokens(user_id, tokens)
+    ts.save_google_tokens(user_id, tokens)
 
     # Issue fresh app JWT (may have updated name/thumbnail)
     new_jwt = app_jwt.create_access_token(
@@ -269,9 +276,12 @@ def refresh_auth(user: dict = Depends(get_current_user)):
 
 
 @router.get("/logout")
-def logout(user: dict = Depends(get_current_user)):
+def logout(
+    user: dict = Depends(get_current_user),
+    ts: TokenStoragePort = Depends(get_token_storage),
+):
     """Delete the user's stored Google tokens."""
     logger.info("logout_started", user_id=user["sub"])
-    token_store.delete_google_tokens(user["sub"])
+    ts.delete_google_tokens(user["sub"])
     logger.info("logout_success", user_id=user["sub"])
     return {"status": "logged_out"}

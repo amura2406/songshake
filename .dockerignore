@@ -1,0 +1,34 @@
+# Development artifacts
+.git
+.gitignore
+.venv
+.env
+.env.*
+*.pyc
+__pycache__
+.mypy_cache
+.pytest_cache
+.ruff_cache
+
+# Frontend (not needed in backend container)
+web/
+node_modules/
+
+# Local data
+songs.db
+oauth.json
+temp_downloads/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Agent/docs
+.agent/
+.gemini/
+docs/
+e2e/
+*.md
+!README.md
