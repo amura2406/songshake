@@ -72,6 +72,7 @@ const Layout = ({ children }) => {
   const menuItems = [
     { path: '/', icon: 'queue_music', label: 'Playlists' },
     { path: '/results', icon: 'storage', label: 'Database' },
+    { path: '/vibing', icon: 'auto_awesome', label: 'Playlist Vibing' },
   ];
 
   return (

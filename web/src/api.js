@@ -172,4 +172,41 @@ export const retrySong = async (videoId) => {
   return res.data;
 };
 
+// --- Vibing (AI DJ) APIs ---
+
+export const generateVibe = async (trackCount = 49) => {
+  const res = await api.post('/api/vibing/generate', { track_count: trackCount });
+  return res.data;
+};
+
+export const getVibePlaylists = async () => {
+  const res = await api.get('/api/vibing/playlists');
+  return res.data;
+};
+
+export const getVibePlaylist = async (playlistId) => {
+  const res = await api.get(`/api/vibing/playlists/${playlistId}`);
+  return res.data;
+};
+
+export const approveVibePlaylist = async (playlistId) => {
+  const res = await api.post(`/api/vibing/playlists/${playlistId}/approve`);
+  return res.data;
+};
+
+export const deleteVibePlaylist = async (playlistId) => {
+  const res = await api.delete(`/api/vibing/playlists/${playlistId}`);
+  return res.data;
+};
+
+export const getYoutubeQuota = async () => {
+  const res = await api.get('/api/vibing/quota');
+  return res.data;
+};
+
+export const seedYoutubeQuota = async (units) => {
+  const res = await api.post(`/api/vibing/quota/seed?units=${units}`);
+  return res.data;
+};
+
 export default api;

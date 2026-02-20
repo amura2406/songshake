@@ -4,6 +4,8 @@ import { checkAuth, getCurrentUser, getToken, clearToken } from './api';
 import Login from './features/auth/Login';
 import Dashboard from './features/enrichment/Dashboard';
 import Results from './features/songs/Results';
+import VibingPage from './features/vibing/VibingPage';
+import VibePlaylistDetail from './features/vibing/VibePlaylistDetail';
 import Layout from './components/layout/Layout';
 
 import { JobsProvider } from './features/jobs/useJobs';
@@ -66,6 +68,22 @@ function App() {
           element={
             <PrivateRoute>
               <Results />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/vibing"
+          element={
+            <PrivateRoute>
+              <VibingPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/vibing/:playlistId"
+          element={
+            <PrivateRoute>
+              <VibePlaylistDetail />
             </PrivateRoute>
           }
         />

@@ -19,6 +19,7 @@ from song_shake.platform.protocols import (
     StoragePort,
     TokenStoragePort,
 )
+from song_shake.features.vibing.storage import VibingStoragePort
 
 
 @lru_cache(maxsize=1)
@@ -61,3 +62,20 @@ def get_token_storage() -> TokenStoragePort:
     from song_shake.platform.tinydb_token_adapter import TinyDBTokenAdapter
 
     return TinyDBTokenAdapter()
+
+
+def get_vibing_storage() -> VibingStoragePort:
+    """Return a VibingStoragePort adapter.
+
+    Vibing requires Firestore because it reads enriched track data from
+    the global ``tracks`` collection.
+    """
+    if _backend() == "firestore":
+        from song_shake.features.vibing.storage import FirestoreVibingAdapter
+
+        return FirestoreVibingAdapter()
+
+    raise NotImplementedError(
+        "Vibing feature requires Firestore backend. "
+        "Set STORAGE_BACKEND=firestore in your .env file."
+    )

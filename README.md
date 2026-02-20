@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.14.0)
+# Song Shake (v0.15.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** enriches your YouTube Music playlists with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Counts** using **Google Gemini 3 Flash** and **YouTube Music API**.
 
@@ -10,6 +10,8 @@ Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song
 - **URL-Based AI Enrichment**: Gemini analyzes tracks via YouTube URL — no audio download needed.
 - **Rich Metadata**: Artists with channel links, album with browse links, release year, play count, BPM, and vocal type.
 - **Category Icons**: Genre, mood, and instrument tags display context-aware icons (e.g. 🎸 Rock, ⚡ Energetic, 🎹 Piano) across sidebar, table, and filters.
+- **Playlist Vibing**: AI-curated playlists from your library — Gemini selects tracks, generates descriptions, and syncs to YouTube Music.
+- **YouTube API Quota Tracking**: Per-user daily quota meter with live countdown to midnight PT reset and pre-sync validation.
 - **Smart Deduplication**: Global song catalog avoids redundant AI calls — 0-token cost for previously analyzed tracks.
 - **Retry Failed Tracks**: Per-track retry with UNPLAYABLE fallback (finds playable alternative via search).
 - **Background Jobs**: Concurrent-safe enrichment with real-time progress via polling.
@@ -90,7 +92,7 @@ The internal YouTube Music API fails if the Google Account lacks a YouTube Chann
 
 ### Cost Awareness
 - **Gemini**: ~$0.10/1M input tokens, ~$0.40/1M output tokens (Flash). A 100-song playlist typically costs $0.01–$0.05.
-- **YouTube Data API**: 10,000 units/day quota (listing playlists = 1 unit).
+- **YouTube Data API**: 10,000 units/day quota. Playlist sync costs 50 units per API call (1 create + N inserts). Quota is tracked per-user in Firestore with daily reset at midnight PT.
 - **Cloud Cost Controls**: Budget alerts and resource limits are configured automatically by `deploy.sh`. See [docs/cost-control.md](docs/cost-control.md) for free tier limits and monitoring.
 
 ## License

@@ -32,4 +32,4 @@ tokens.db
 
 # Frontend
 web/node_modules/
-web/dist/
+web/dist/tracks.json

@@ -20,6 +20,7 @@ from song_shake.features.auth.routes import router as auth_router
 from song_shake.features.songs.routes_playlists import router as playlists_router
 from song_shake.features.songs.routes import router as songs_router
 from song_shake.features.jobs.routes import router as jobs_router
+from song_shake.features.vibing.routes import router as vibing_router
 
 app = FastAPI(title="Song Shake API")
 
@@ -43,6 +44,7 @@ app.include_router(auth_router)
 app.include_router(playlists_router, prefix="/api")
 app.include_router(songs_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
+app.include_router(vibing_router, prefix="/api")
 
 if __name__ == "__main__":
     uvicorn.run("song_shake.api:app", host="0.0.0.0", port=8000, reload=True)
