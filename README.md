@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.12.0)
+# Song Shake (v0.13.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** enriches your YouTube Music playlists with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Counts** using **Google Gemini 3 Flash** and **YouTube Music API**.
 
@@ -90,6 +90,7 @@ The internal YouTube Music API fails if the Google Account lacks a YouTube Chann
 ### Cost Awareness
 - **Gemini**: ~$0.10/1M input tokens, ~$0.40/1M output tokens (Flash). A 100-song playlist typically costs $0.01–$0.05.
 - **YouTube Data API**: 10,000 units/day quota (listing playlists = 1 unit).
+- **Cloud Cost Controls**: Budget alerts and resource limits are configured automatically by `deploy.sh`. See [docs/cost-control.md](docs/cost-control.md) for free tier limits and monitoring.
 
 ## License
 
