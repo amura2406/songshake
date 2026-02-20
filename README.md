@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.13.0)
+# Song Shake (v0.14.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** enriches your YouTube Music playlists with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Counts** using **Google Gemini 3 Flash** and **YouTube Music API**.
 
@@ -9,6 +9,7 @@ Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song
 - **Web Interface**: Modern Vue.js UI with Google OAuth login, real-time enrichment progress, and interactive results.
 - **URL-Based AI Enrichment**: Gemini analyzes tracks via YouTube URL — no audio download needed.
 - **Rich Metadata**: Artists with channel links, album with browse links, release year, play count, BPM, and vocal type.
+- **Category Icons**: Genre, mood, and instrument tags display context-aware icons (e.g. 🎸 Rock, ⚡ Energetic, 🎹 Piano) across sidebar, table, and filters.
 - **Smart Deduplication**: Global song catalog avoids redundant AI calls — 0-token cost for previously analyzed tracks.
 - **Retry Failed Tracks**: Per-track retry with UNPLAYABLE fallback (finds playable alternative via search).
 - **Background Jobs**: Concurrent-safe enrichment with real-time progress via polling.

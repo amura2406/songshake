@@ -4,6 +4,7 @@ import { getSongs, getTags, retrySong } from '../../api';
 import YouTube from 'react-youtube';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
+import TagIcon from '../../components/ui/TagIcon';
 
 
 
@@ -410,11 +411,12 @@ const Results = () => {
                           <button
                             key={i}
                             onClick={() => toggleTag(tag.value)}
-                            className={`px-4 py-1.5 rounded-[20px] text-xs font-medium transition-all flex items-center justify-center border ${isActive
+                            className={`px-4 py-1.5 rounded-[20px] text-xs font-medium transition-all flex items-center justify-center gap-1.5 border ${isActive
                               ? activeClass
                               : 'bg-transparent text-slate-300 border-white/10 hover:border-white/30'
                               }`}
                           >
+                            <TagIcon type={tag.type} value={tag.value} size={14} />
                             {tag.value}
                           </button>
                         );
@@ -591,7 +593,7 @@ const Results = () => {
                       <td className="px-4 py-4">
                         <div className="flex gap-2 flex-wrap">
                           {song.genres?.map((genre, i) => (
-                            <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap">{genre}</span>
+                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap"><TagIcon type="genre" value={genre} size={10} />{genre}</span>
                           ))}
 
                         </div>
@@ -599,7 +601,7 @@ const Results = () => {
                       <td className="px-4 py-4">
                         <div className="flex gap-2 flex-wrap">
                           {song.moods?.map((mood, i) => (
-                            <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20 whitespace-nowrap">{mood}</span>
+                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20 whitespace-nowrap"><TagIcon type="mood" value={mood} size={10} />{mood}</span>
                           ))}
                           {(!song.moods || song.moods.length === 0) && (
                             <span className="text-slate-600 text-[10px] italic">Unknown</span>
@@ -609,7 +611,7 @@ const Results = () => {
                       <td className="px-4 py-4">
                         <div className="flex gap-2 flex-wrap">
                           {song.instruments?.map((inst, i) => (
-                            <span key={i} className="px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap">{inst}</span>
+                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap"><TagIcon type="instrument" value={inst} size={10} />{inst}</span>
                           ))}
                         </div>
                       </td>
@@ -645,8 +647,8 @@ const Results = () => {
             exit={{ opacity: 0, y: 30 }}
             transition={{ duration: 0.3 }}
             className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-xs font-medium shadow-lg backdrop-blur-xl border ${toast.type === 'warning'
-                ? 'bg-amber-500/20 border-amber-500/30 text-amber-200'
-                : 'bg-white/10 border-white/20 text-white'
+              ? 'bg-amber-500/20 border-amber-500/30 text-amber-200'
+              : 'bg-white/10 border-white/20 text-white'
               }`}
           >
             {toast.message}

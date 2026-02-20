@@ -4,6 +4,7 @@ import { getCurrentUser, logoutUser, getTags } from '../../api';
 import logoImg from '../../assets/logo.png';
 import JobIcon from '../../features/jobs/JobIcon';
 import AIUsageFooter from '../../features/jobs/AIUsageFooter';
+import TagIcon from '../ui/TagIcon';
 
 const Layout = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -178,7 +179,7 @@ const Layout = ({ children }) => {
                     className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                   >
                     <span className="flex items-center gap-3">
-                      <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(236,72,153,0.8)] ${idx % 4 === 0 ? 'bg-pink-500' : idx % 4 === 1 ? 'bg-purple-500' : idx % 4 === 2 ? 'bg-blue-500' : 'bg-green-500'}`}></span>
+                      <TagIcon type="mood" value={mood.name} size={14} className="opacity-70" />
                       {mood.name}
                     </span>
                     <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{mood.count}</span>
@@ -208,7 +209,7 @@ const Layout = ({ children }) => {
                     className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                   >
                     <span className="flex items-center gap-3">
-                      <span className="material-icons text-xs opacity-70">album</span>
+                      <TagIcon type="genre" value={genre.name} size={14} className="opacity-70" />
                       {genre.name}
                     </span>
                     <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{genre.count}</span>
