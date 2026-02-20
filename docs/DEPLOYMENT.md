@@ -91,6 +91,42 @@ firebase deploy --only hosting,firestore:rules
 
 All secrets (`GOOGLE_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `JWT_SECRET`) are injected via Cloud Run secrets.
 
+## Local Development with Firestore
+
+By default, the backend uses **TinyDB** (local JSON file). To test against the production Firestore database locally:
+
+### 1. Authenticate with Google Cloud
+
+```bash
+gcloud auth application-default login --project your-project-id
+```
+
+### 2. Set environment variables in `.env`
+
+```bash
+STORAGE_BACKEND=firestore
+GOOGLE_CLOUD_PROJECT=your-project-id   # Required for ADC to find the right project
+```
+
+### 3. Start the backend
+
+```bash
+uv run uvicorn song_shake.api:app --reload --port 8000
+```
+
+> [!WARNING]
+> This connects to the **real production Firestore** database. Any writes (enrichments, wipes) affect production data.
+
+### Switching back to TinyDB
+
+Remove or change `STORAGE_BACKEND` in `.env`:
+
+```bash
+STORAGE_BACKEND=tinydb   # or remove the line entirely
+```
+
+No cloud credentials are needed for TinyDB mode.
+
 ## Post-Deploy Checklist
 
 - [ ] Verify Cloud Run service is `Serving`

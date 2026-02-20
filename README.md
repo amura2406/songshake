@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v0.11.0)
+# Song Shake (v0.12.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** enriches your YouTube Music playlists with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Counts** using **Google Gemini 3 Flash** and **YouTube Music API**.
 
@@ -61,6 +61,7 @@ Open http://localhost:5173 and login with Google.
 | `GOOGLE_CLIENT_SECRET` | Yes    | Google OAuth Web Client Secret        |
 | `JWT_SECRET`         | Prod     | JWT signing secret (auto-generated in dev) |
 | `STORAGE_BACKEND`    | No       | `firestore` or `tinydb` (default: tinydb) |
+| `GOOGLE_CLOUD_PROJECT` | Firestore | GCP project ID (required when using Firestore) |
 
 ## 🚢 Deployment
 
