@@ -32,4 +32,8 @@ tokens.db
 
 # Frontend
 web/node_modules/
-web/dist/tracks.json
+web/dist/
+
+# Data exports
+tracks.json
+songs_db.json
