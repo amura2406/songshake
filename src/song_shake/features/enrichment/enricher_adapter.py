@@ -71,7 +71,8 @@ class GeminiEnricherAdapter:
         the YouTube Music URL directly.
 
         Returns dict with genres, moods, instruments, bpm, vocal_type, album,
-        and 'usage_metadata': {'prompt_tokens': int, 'candidates_tokens': int}.
+        and 'usage_metadata': {'prompt_tokens': int, 'candidates_tokens': int,
+        'search_queries': int}.
         """
         prompt = _URL_PROMPT_TEMPLATE.format(
             video_id=video_id,
@@ -102,16 +103,29 @@ class GeminiEnricherAdapter:
         prompt_tokens = usage.prompt_token_count if usage else 0
         candidates_tokens = usage.candidates_token_count if usage else 0
 
+        # Count Google Search queries from grounding metadata
+        search_queries = 0
+        if response.candidates:
+            grounding = getattr(
+                response.candidates[0], "grounding_metadata", None
+            )
+            if grounding:
+                web_queries = getattr(grounding, "web_search_queries", None)
+                if web_queries:
+                    search_queries = len(web_queries)
+
         logger.info(
             "gemini_url_enrich_completed",
             video_id=video_id,
             prompt_tokens=prompt_tokens,
             candidates_tokens=candidates_tokens,
+            search_queries=search_queries,
         )
 
         result = json.loads(response.text)
         result["usage_metadata"] = {
             "prompt_tokens": prompt_tokens,
             "candidates_tokens": candidates_tokens,
+            "search_queries": search_queries,
         }
         return result

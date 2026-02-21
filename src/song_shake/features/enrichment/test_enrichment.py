@@ -81,7 +81,11 @@ class FakeEnricher:
             "moods": ["Happy"],
             "instruments": ["Guitar"],
             "bpm": 120,
-            "usage_metadata": {"prompt_tokens": 100, "candidates_tokens": 50},
+            "usage_metadata": {
+                "prompt_tokens": 100,
+                "candidates_tokens": 50,
+                "search_queries": 2,
+            },
         }
         self.calls: list[tuple[str, str, str]] = []
 
@@ -101,7 +105,11 @@ class FakeEnricherError:
             "instruments": [],
             "bpm": None,
             "error": "AI model failed",
-            "usage_metadata": {"prompt_tokens": 10, "candidates_tokens": 0},
+            "usage_metadata": {
+                "prompt_tokens": 10,
+                "candidates_tokens": 0,
+                "search_queries": 1,
+            },
         }
 
 
@@ -178,6 +186,7 @@ class TestTokenTracker:
         tracker = TokenTracker()
         assert tracker.input_tokens == 0
         assert tracker.output_tokens == 0
+        assert tracker.search_queries == 0
         assert tracker.successful == 0
         assert tracker.failed == 0
         assert tracker.errors == []
@@ -188,15 +197,32 @@ class TestTokenTracker:
         assert tracker.get_cost() == 0.0
 
     def test_get_cost_calculation(self):
-        """Should calculate cost based on Gemini pricing."""
+        """Should calculate cost based on Gemini 3 Flash pricing."""
         tracker = TokenTracker()
-        tracker.input_tokens = 1_000_000  # 1M input tokens
-        tracker.output_tokens = 1_000_000  # 1M output tokens
+        tracker.input_tokens = 1_000_000  # 1M input tokens → $0.50
+        tracker.output_tokens = 1_000_000  # 1M output tokens → $3.00
 
         cost = tracker.get_cost()
-        # Cost depends on the per-token rates in the implementation
-        assert cost > 0
-        assert isinstance(cost, float)
+        # $0.50 (input) + $3.00 (output) = $3.50
+        assert cost == pytest.approx(3.50)
+
+    def test_get_cost_with_search_queries(self):
+        """Should include Google Search query cost at $0.014/query."""
+        tracker = TokenTracker()
+        tracker.search_queries = 100  # 100 queries → $1.40
+
+        cost = tracker.get_cost()
+        assert cost == pytest.approx(1.40)
+
+    def test_get_cost_combined(self):
+        """Should combine token cost with search query cost."""
+        tracker = TokenTracker()
+        tracker.input_tokens = 1_000_000  # $0.50
+        tracker.output_tokens = 1_000_000  # $3.00
+        tracker.search_queries = 10  # $0.14
+
+        cost = tracker.get_cost()
+        assert cost == pytest.approx(3.64)
 
     def test_successful_and_failed_counts(self):
         """Should track successful and failed operations independently."""
@@ -210,11 +236,16 @@ class TestTokenTracker:
         assert len(tracker.errors) == 2
 
     def test_add_usage_from_dict(self):
-        """Should update token counts from a plain dict."""
+        """Should update token and search query counts from a plain dict."""
         tracker = TokenTracker()
-        tracker.add_usage_from_dict({"prompt_tokens": 200, "candidates_tokens": 100})
+        tracker.add_usage_from_dict({
+            "prompt_tokens": 200,
+            "candidates_tokens": 100,
+            "search_queries": 3,
+        })
         assert tracker.input_tokens == 200
         assert tracker.output_tokens == 100
+        assert tracker.search_queries == 3
 
     def test_add_usage_from_dict_none(self):
         """Should be a no-op when passed None."""
@@ -227,6 +258,15 @@ class TestTokenTracker:
         tracker = TokenTracker()
         tracker.add_usage_from_dict({})
         assert tracker.input_tokens == 0
+        assert tracker.search_queries == 0
+
+    def test_add_usage_from_dict_no_search_queries(self):
+        """Should default search_queries to 0 when key is absent."""
+        tracker = TokenTracker()
+        tracker.add_usage_from_dict({"prompt_tokens": 50, "candidates_tokens": 20})
+        assert tracker.input_tokens == 50
+        assert tracker.output_tokens == 20
+        assert tracker.search_queries == 0
 
 
 # ===========================================================================
@@ -523,7 +563,11 @@ class TestProcessPlaylist:
                 "moods": ["Chill"],
                 "instruments": ["Piano"],
                 "bpm": 90,
-                "usage_metadata": {"prompt_tokens": 500, "candidates_tokens": 200},
+                "usage_metadata": {
+                    "prompt_tokens": 500,
+                    "candidates_tokens": 200,
+                    "search_queries": 1,
+                },
             }),
             song_fetcher=FakeSongFetcher(),
             album_fetcher=FakeAlbumFetcher(),
@@ -611,7 +655,11 @@ class TestRetryFailedTracks:
                 return {
                     "genres": ["Pop"], "moods": ["Happy"],
                     "instruments": ["Guitar"], "bpm": 120,
-                    "usage_metadata": {"prompt_tokens": 100, "candidates_tokens": 50},
+                    "usage_metadata": {
+                        "prompt_tokens": 100,
+                        "candidates_tokens": 50,
+                        "search_queries": 2,
+                    },
                 }
 
         result = retry_failed_tracks(

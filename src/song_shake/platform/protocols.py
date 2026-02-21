@@ -96,7 +96,8 @@ class AudioEnricher(Protocol):
     """Abstract AI enrichment operations.
 
     Returns dict with genres, moods, instruments, bpm, album, and optionally
-    'usage_metadata': {'prompt_tokens': int, 'candidates_tokens': int}.
+    'usage_metadata': {'prompt_tokens': int, 'candidates_tokens': int,
+    'search_queries': int}.
     """
 
     def enrich_by_url(self, video_id: str, title: str, artist: str) -> dict:

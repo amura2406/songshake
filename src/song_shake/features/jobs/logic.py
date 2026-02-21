@@ -16,9 +16,7 @@ from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Pricing constants (duplicated from enrichment for cost calculation)
-PRICE_INPUT_AUDIO_PER_1M = 1.00
-PRICE_OUTPUT_PER_1M = 3.00
+
 
 # In-memory map of job_id → threading.Event for cancellation
 _cancel_events: dict[str, threading.Event] = {}

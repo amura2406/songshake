@@ -45,15 +45,19 @@ def _normalize_artist(artist) -> dict:
     return {"name": str(artist).removesuffix(" - Topic").strip(), "id": None}
 
 # Pricing for Gemini 3 Flash (Preview)
-# Input Text: $0.15 / 1M tokens (URL enrichment uses text, not audio)
-# Output: $0.60 / 1M tokens
-PRICE_INPUT_PER_1M = 0.15
-PRICE_OUTPUT_PER_1M = 0.60
+# https://ai.google.dev/gemini-api/docs/pricing#gemini-3-flash-preview
+# Input Text: $0.50 / 1M tokens
+# Output: $3.00 / 1M tokens
+# Google Search grounding: $14.00 / 1K queries
+PRICE_INPUT_PER_1M = 0.50
+PRICE_OUTPUT_PER_1M = 3.00
+PRICE_SEARCH_PER_QUERY = 0.014
 
 class TokenTracker:
     def __init__(self):
         self.input_tokens = 0
         self.output_tokens = 0
+        self.search_queries = 0
         self.successful = 0
         self.failed = 0
         self.errors = []
@@ -70,16 +74,22 @@ class TokenTracker:
         self.output_tokens += c_tokens
 
     def add_usage_from_dict(self, usage_dict: dict) -> None:
-        """Update token counts from a plain dict (returned by AudioEnricher adapters)."""
+        """Update token and search query counts from a plain dict.
+
+        Expected keys: prompt_tokens (int), candidates_tokens (int),
+        search_queries (int, optional).
+        """
         if not usage_dict:
             return
         self.input_tokens += usage_dict.get("prompt_tokens", 0)
         self.output_tokens += usage_dict.get("candidates_tokens", 0)
+        self.search_queries += usage_dict.get("search_queries", 0)
 
     def get_cost(self):
         input_cost = (self.input_tokens / 1_000_000) * PRICE_INPUT_PER_1M
         output_cost = (self.output_tokens / 1_000_000) * PRICE_OUTPUT_PER_1M
-        return input_cost + output_cost
+        search_cost = self.search_queries * PRICE_SEARCH_PER_QUERY
+        return input_cost + output_cost + search_cost
 
     def print_summary(self):
         total_cost = self.get_cost()
@@ -92,6 +102,7 @@ class TokenTracker:
         table.add_row("Failed", str(self.failed))
         table.add_row("Input Tokens", f"{self.input_tokens:,}")
         table.add_row("Output Tokens", f"{self.output_tokens:,}")
+        table.add_row("Search Queries", f"{self.search_queries:,}")
         table.add_row("Est. Cost", f"${total_cost:.6f}")
         
         console.print(table)
