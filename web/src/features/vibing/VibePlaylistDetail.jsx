@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getVibePlaylist, approveVibePlaylist, deleteVibePlaylist, getYoutubeQuota } from '../../api';
-import { ArrowLeft, Sparkles, CheckCircle2, Loader2, ExternalLink, Music, Trash2, Disc3, Heart, AlertTriangle } from 'lucide-react';
+import { getVibePlaylist, approveVibePlaylist, completeVibePlaylist, deleteVibePlaylist, getYoutubeQuota } from '../../api';
+import { ArrowLeft, Sparkles, CheckCircle2, Loader2, ExternalLink, Music, Trash2, Disc3, Heart, AlertTriangle, RefreshCw } from 'lucide-react';
 import YouTube from 'react-youtube';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
@@ -51,6 +51,7 @@ const VibePlaylistDetail = () => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [toast, setToast] = useState(null);
     const [quota, setQuota] = useState(null);
+    const [completing, setCompleting] = useState(false);
 
     const loadPlaylist = useCallback(async () => {
         try {
@@ -128,6 +129,26 @@ const VibePlaylistDetail = () => {
             setError(detail);
         } finally {
             setApproving(false);
+        }
+    };
+
+    const handleComplete = async () => {
+        try {
+            setCompleting(true);
+            setError(null);
+            const result = await completeVibePlaylist(playlistId);
+            if (result.inserted > 0) {
+                showToast(`Completed! ${result.inserted} missing track${result.inserted > 1 ? 's' : ''} added.${result.still_missing > 0 ? ` ${result.still_missing} still missing.` : ''}`, 'info');
+            } else if (result.still_missing > 0) {
+                showToast(`${result.still_missing} track${result.still_missing > 1 ? 's' : ''} still couldn't be added.`, 'warning');
+            } else {
+                showToast('Playlist is already complete! No missing tracks.', 'info');
+            }
+        } catch (err) {
+            const detail = err.response?.data?.detail || 'Complete failed';
+            setError(detail);
+        } finally {
+            setCompleting(false);
         }
     };
 
@@ -250,8 +271,16 @@ const VibePlaylistDetail = () => {
                         </button>
                         {playlist.status === 'synced' ? (
                             <div className="flex items-center gap-2">
-                                <span className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-green-500/10 text-green-400 text-sm font-medium border border-green-500/20">
+                                <span className="group/sync flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-green-500/10 text-green-400 text-sm font-medium border border-green-500/20 relative">
                                     <CheckCircle2 size={16} /> Synced
+                                    <button
+                                        onClick={handleComplete}
+                                        disabled={completing}
+                                        className="ml-1 opacity-0 group-hover/sync:opacity-100 transition-opacity duration-200 hover:text-green-300 disabled:opacity-50"
+                                        title="Complete missing tracks"
+                                    >
+                                        {completing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                                    </button>
                                 </span>
                                 {(approveResult?.youtube_url || playlist.youtube_playlist_id) && (
                                     <a href={approveResult?.youtube_url || `https://music.youtube.com/playlist?list=${playlist.youtube_playlist_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary/10 text-primary text-sm font-medium border border-primary/20 hover:bg-primary/20 transition-colors">

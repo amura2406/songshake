@@ -32,7 +32,10 @@ from song_shake.features.vibing.models import (
     VibeRequest,
 )
 from song_shake.features.vibing.storage import VibingStoragePort
-from song_shake.features.vibing.youtube_sync import create_youtube_playlist
+from song_shake.features.vibing.youtube_sync import (
+    complete_youtube_playlist,
+    create_youtube_playlist,
+)
 from song_shake.platform.logging_config import get_logger
 from song_shake.platform.protocols import JobStoragePort, TokenStoragePort
 from song_shake.platform.storage_factory import (
@@ -564,7 +567,7 @@ def approve_vibe_playlist(
             logger.warning("quota_increment_failed", correlationId=correlation_id, error=str(exc))
 
     try:
-        yt_playlist_id = create_youtube_playlist(
+        sync_result = create_youtube_playlist(
             access_token, title, video_ids, on_quota_used=_on_quota_used,
         )
     except RuntimeError as exc:
@@ -574,6 +577,8 @@ def approve_vibe_playlist(
             error=str(exc),
         )
         raise HTTPException(status_code=502, detail=f"YouTube sync failed: {exc}")
+
+    yt_playlist_id = sync_result.playlist_id
 
     # Firestore write-back
     try:
@@ -603,6 +608,140 @@ def approve_vibe_playlist(
     return {
         "status": "synced",
         "youtube_playlist_id": yt_playlist_id,
+        "youtube_url": f"https://music.youtube.com/playlist?list={yt_playlist_id}",
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /vibing/playlists/{id}/complete — Resync missing tracks
+# ---------------------------------------------------------------------------
+
+
+@router.post("/playlists/{playlist_id}/complete")
+def complete_vibe_playlist(
+    playlist_id: str,
+    user: dict = Depends(get_current_user),
+    storage: VibingStoragePort = Depends(get_vibing_storage),
+    token_store: TokenStoragePort = Depends(get_token_storage),
+):
+    """Complete a synced playlist by inserting any missing tracks on YouTube."""
+    owner = user["sub"]
+    correlation_id = str(uuid4())[:8]
+    start = time.monotonic()
+
+    logger.info(
+        "complete_vibe_started",
+        operation="complete_vibe",
+        correlationId=correlation_id,
+        userId=owner,
+        playlist_id=playlist_id,
+    )
+
+    playlist = storage.get_playlist(playlist_id, owner)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found.")
+
+    if playlist["status"] != "synced":
+        raise HTTPException(status_code=400, detail="Playlist is not synced yet.")
+
+    yt_playlist_id = playlist.get("youtube_playlist_id")
+    if not yt_playlist_id:
+        raise HTTPException(status_code=400, detail="No YouTube playlist ID found.")
+
+    # Pre-check YouTube quota
+    video_ids = playlist.get("video_ids", [])
+    quota = storage.get_youtube_quota(owner)
+    remaining = YOUTUBE_DAILY_LIMIT - quota.get("units_used", 0)
+
+    # Worst case: all tracks are missing
+    estimated_cost = len(video_ids) * YOUTUBE_QUOTA_PER_CALL
+    if estimated_cost > remaining:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Insufficient YouTube API quota. Worst case needs {estimated_cost:,} units "
+                f"but only {remaining:,} remain today."
+            ),
+        )
+
+    # Get access token
+    tokens = token_store.get_google_tokens(owner)
+    if not tokens or not tokens.get("access_token"):
+        raise HTTPException(status_code=401, detail="No Google tokens found.")
+
+    # Refresh if expired
+    import os
+
+    import requests
+
+    expires_at = tokens.get("expires_at", 0)
+    if time.time() >= expires_at:
+        refresh_tok = tokens.get("refresh_token")
+        if not refresh_tok:
+            raise HTTPException(status_code=401, detail="Token expired, no refresh token.")
+
+        client_id = os.getenv("GOOGLE_CLIENT_ID")
+        client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            raise HTTPException(status_code=401, detail="Missing OAuth credentials for refresh.")
+
+        try:
+            resp = requests.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_tok,
+                    "grant_type": "refresh_token",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            new_tokens = resp.json()
+            tokens["access_token"] = new_tokens["access_token"]
+            tokens["expires_at"] = int(time.time()) + new_tokens.get("expires_in", 3600)
+            token_store.save_google_tokens(owner, tokens)
+        except requests.RequestException as exc:
+            logger.error("token_refresh_failed", correlationId=correlation_id, error=str(exc))
+            raise HTTPException(status_code=401, detail="Token refresh failed.")
+
+    access_token = tokens["access_token"]
+
+    def _on_quota_used(units: int) -> None:
+        try:
+            storage.increment_youtube_quota(owner, units)
+        except Exception as exc:
+            logger.warning("quota_increment_failed", correlationId=correlation_id, error=str(exc))
+
+    try:
+        sync_result = complete_youtube_playlist(
+            access_token, yt_playlist_id, video_ids, on_quota_used=_on_quota_used,
+        )
+    except RuntimeError as exc:
+        logger.error(
+            "complete_vibe_youtube_failed",
+            correlationId=correlation_id,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=502, detail=f"YouTube complete failed: {exc}")
+
+    duration_ms = int((time.monotonic() - start) * 1000)
+    logger.info(
+        "complete_vibe_success",
+        operation="complete_vibe",
+        correlationId=correlation_id,
+        userId=owner,
+        playlist_id=playlist_id,
+        youtube_playlist_id=yt_playlist_id,
+        inserted=sync_result.inserted,
+        still_missing=len(sync_result.failed_video_ids),
+        duration=duration_ms,
+    )
+
+    return {
+        "status": "completed",
+        "inserted": sync_result.inserted,
+        "still_missing": len(sync_result.failed_video_ids),
         "youtube_url": f"https://music.youtube.com/playlist?list={yt_playlist_id}",
     }
 

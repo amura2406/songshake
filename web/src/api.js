@@ -212,6 +212,11 @@ export const approveVibePlaylist = async (playlistId) => {
   return res.data;
 };
 
+export const completeVibePlaylist = async (playlistId) => {
+  const res = await api.post(`/api/vibing/playlists/${playlistId}/complete`);
+  return res.data;
+};
+
 export const deleteVibePlaylist = async (playlistId) => {
   const res = await api.delete(`/api/vibing/playlists/${playlistId}`);
   return res.data;

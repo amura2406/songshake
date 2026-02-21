@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v1.4.0)
+# Song Shake (v1.5.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** enriches your YouTube Music playlists with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Counts** using **Google Gemini 3 Flash** and **YouTube Music API**.
 
@@ -10,7 +10,7 @@ Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song
 - **URL-Based AI Enrichment**: Gemini analyzes tracks via YouTube URL — no audio download needed.
 - **Rich Metadata**: Artists with channel links, album with browse links, release year, play count, BPM, and vocal type.
 - **Category Icons**: Genre, mood, and instrument tags display context-aware icons (e.g. 🎸 Rock, ⚡ Energetic, 🎹 Piano) across sidebar, table, and filters.
-- **Playlist Vibing**: AI-curated playlists from your library using 5 recipe strategies — Neglected Gems (seed-based), Energy Zones (BPM+mood), Aesthetic Universes (genre+instrument clustering), Vocal Divide, and DJ Set Arc (narrative 50-track journey). Syncs to YouTube Music.
+- **Playlist Vibing**: AI-curated playlists from your library using 5 recipe strategies — Neglected Gems (seed-based), Energy Zones (BPM+mood), Aesthetic Universes (genre+instrument clustering), Vocal Divide, and DJ Set Arc (narrative 50-track journey). Syncs to YouTube Music with exponential backoff retry on 409/5xx errors and a "complete" resync for missing tracks.
 - **YouTube API Quota Tracking**: Per-user daily quota meter with live countdown to midnight PT reset and pre-sync validation.
 - **Smart Deduplication**: Global song catalog avoids redundant AI calls — 0-token cost for previously analyzed tracks.
 - **Retry Failed Tracks**: Per-track retry with UNPLAYABLE fallback (finds playable alternative via search).
