@@ -13,6 +13,8 @@ happens in storage_factory.py via lazy initialisation on first use.
 from datetime import datetime, timezone
 from functools import lru_cache
 
+from google.cloud.firestore_v1.base_query import FieldFilter
+
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -64,7 +66,7 @@ class FirestoreSongsAdapter:
         # Find all videoIds owned by this user
         owner_refs = (
             self._db.collection("track_owners")
-            .where("owner", "==", owner)
+            .where(filter=FieldFilter("owner", "==", owner))
             .stream()
         )
         video_ids = [doc.to_dict()["videoId"] for doc in owner_refs]
@@ -78,7 +80,7 @@ class FirestoreSongsAdapter:
             batch = video_ids[i : i + 30]
             docs = (
                 self._db.collection("tracks")
-                .where("videoId", "in", batch)
+                .where(filter=FieldFilter("videoId", "in", batch))
                 .stream()
             )
             for doc in docs:
@@ -120,6 +122,110 @@ class FirestoreSongsAdapter:
         tracks = self.get_all_tracks(owner)
         return [t for t in tracks if t.get("status") == "error"]
 
+    def delete_tracks(self, owner: str, video_ids: list[str]) -> int:
+        """Delete tracks owned by this user.
+
+        1. Delete track_owners/{owner}_{vid} for each video_id.
+        2. If no other owners reference the track, delete tracks/{vid} too.
+
+        Returns the count of ownership links removed.
+        """
+        if not video_ids:
+            return 0
+
+        deleted = 0
+        batch = self._db.batch()
+        batch_count = 0
+
+        # Phase 1: Delete ownership links and collect orphan candidates
+        orphan_candidates: list[str] = []
+        for vid in video_ids:
+            doc_id = f"{owner}_{vid}"
+            ref = self._db.collection("track_owners").document(doc_id)
+            doc = ref.get()
+            if doc.exists:
+                batch.delete(ref)
+                batch_count += 1
+                deleted += 1
+                orphan_candidates.append(vid)
+
+            # Firestore batch limit is 500
+            if batch_count >= 500:
+                batch.commit()
+                batch = self._db.batch()
+                batch_count = 0
+
+        if batch_count > 0:
+            batch.commit()
+
+        # Phase 2: Delete orphaned tracks (no remaining owners)
+        if orphan_candidates:
+            orphan_batch = self._db.batch()
+            orphan_count = 0
+            for vid in orphan_candidates:
+                remaining = list(
+                    self._db.collection("track_owners")
+                    .where(filter=FieldFilter("videoId", "==", vid))
+                    .limit(1)
+                    .stream()
+                )
+                if not remaining:
+                    orphan_batch.delete(
+                        self._db.collection("tracks").document(vid)
+                    )
+                    orphan_count += 1
+                    if orphan_count >= 500:
+                        orphan_batch.commit()
+                        orphan_batch = self._db.batch()
+                        orphan_count = 0
+
+            if orphan_count > 0:
+                orphan_batch.commit()
+
+        logger.info(
+            "tracks_deleted",
+            owner=owner,
+            requested=len(video_ids),
+            deleted=deleted,
+        )
+        return deleted
+
+    def get_all_tracks_with_tags(
+        self, owner: str
+    ) -> tuple[list[dict], list[dict]]:
+        """Fetch all tracks and compute tag counts in a single read pass.
+
+        Returns (tracks, tags) — avoids duplicate get_all_tracks() call
+        that get_tags() would normally make.
+        """
+        tracks = self.get_all_tracks(owner)
+
+        tag_counts: dict[tuple[str, str], int] = {}
+        for t in tracks:
+            status = t.get("status", "error")
+            status_tag = "Success" if status == "success" else "Failed"
+            key = (status_tag, "status")
+            tag_counts[key] = tag_counts.get(key, 0) + 1
+
+            for genre in t.get("genres", []):
+                key = (genre, "genre")
+                tag_counts[key] = tag_counts.get(key, 0) + 1
+            for mood in t.get("moods", []):
+                key = (mood, "mood")
+                tag_counts[key] = tag_counts.get(key, 0) + 1
+            for instr in t.get("instruments", []):
+                key = (instr, "instrument")
+                tag_counts[key] = tag_counts.get(key, 0) + 1
+
+        tags = sorted(
+            [
+                {"name": k[0], "type": k[1], "count": v}
+                for k, v in tag_counts.items()
+            ],
+            key=lambda x: (-x["count"], x["name"]),
+        )
+        return tracks, tags
+
     # --- enrichment history ---
 
     def save_enrichment_history(
@@ -142,7 +248,7 @@ class FirestoreSongsAdapter:
     def get_enrichment_history(self, owner: str) -> dict:
         docs = (
             self._db.collection("enrichment_history")
-            .where("owner", "==", owner)
+            .where(filter=FieldFilter("owner", "==", owner))
             .stream()
         )
         result = {}
@@ -235,16 +341,16 @@ class FirestoreJobsAdapter:
         return doc.to_dict() if doc.exists else None
 
     def get_active_jobs(self, owner: str | None = None) -> list[dict]:
-        query = self._db.collection("jobs").where("status", "in", ["pending", "running"])
+        query = self._db.collection("jobs").where(filter=FieldFilter("status", "in", ["pending", "running"]))
         if owner:
-            query = query.where("owner", "==", owner)
+            query = query.where(filter=FieldFilter("owner", "==", owner))
         return [doc.to_dict() for doc in query.stream()]
 
     def get_job_history(self, owner: str | None = None) -> list[dict]:
         terminal = ["completed", "error", "cancelled"]
-        query = self._db.collection("jobs").where("status", "in", terminal)
+        query = self._db.collection("jobs").where(filter=FieldFilter("status", "in", terminal))
         if owner:
-            query = query.where("owner", "==", owner)
+            query = query.where(filter=FieldFilter("owner", "==", owner))
         results = [doc.to_dict() for doc in query.stream()]
         results.sort(key=lambda j: j.get("updated_at", ""), reverse=True)
         return results
@@ -254,11 +360,11 @@ class FirestoreJobsAdapter:
     ) -> dict | None:
         query = (
             self._db.collection("jobs")
-            .where("playlist_id", "==", playlist_id)
-            .where("status", "in", ["pending", "running"])
+            .where(filter=FieldFilter("playlist_id", "==", playlist_id))
+            .where(filter=FieldFilter("status", "in", ["pending", "running"]))
         )
         if owner:
-            query = query.where("owner", "==", owner)
+            query = query.where(filter=FieldFilter("owner", "==", owner))
         docs = list(query.stream())
         return docs[0].to_dict() if docs else None
 
@@ -283,9 +389,9 @@ class FirestoreJobsAdapter:
             # Check for existing active job
             query = (
                 self._db.collection("jobs")
-                .where("playlist_id", "==", playlist_id)
-                .where("owner", "==", owner)
-                .where("status", "in", ["pending", "running"])
+                .where(filter=FieldFilter("playlist_id", "==", playlist_id))
+                .where(filter=FieldFilter("owner", "==", owner))
+                .where(filter=FieldFilter("status", "in", ["pending", "running"]))
             )
             existing = list(query.stream(transaction=txn))
             if existing:

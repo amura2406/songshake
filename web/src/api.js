@@ -122,6 +122,24 @@ export const getSongs = async (skip = 0, limit = 50, tags = null, minBpm = null,
   return res.data;  // { items, total, page, pages }
 };
 
+export const getSongsWithTags = async (skip = 0, limit = 50, tags = null, minBpm = null, maxBpm = null) => {
+  const params = { skip, limit };
+  if (tags) params.tags = tags;
+  if (minBpm !== null) params.min_bpm = minBpm;
+  if (maxBpm !== null) params.max_bpm = maxBpm;
+  const res = await api.get('/api/songs-with-tags', { params });
+  return res.data;  // { items, total, page, pages, tags }
+};
+
+export const deleteSongs = async (videoIds) => {
+  const res = await api.request({
+    method: 'DELETE',
+    url: '/api/songs',
+    data: { video_ids: videoIds },
+  });
+  return res.data;  // { deleted }
+};
+
 // --- Job System APIs ---
 
 export const createJob = async (playlistId, apiKey = null, wipe = false, playlistName = '') => {

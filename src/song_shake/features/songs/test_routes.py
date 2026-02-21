@@ -19,6 +19,11 @@ def _make_mock_storage(tracks=None, tags=None):
     mock = MagicMock()
     mock.get_all_tracks.return_value = tracks if tracks is not None else []
     mock.get_tags.return_value = tags if tags is not None else []
+    mock.delete_tracks.return_value = 0
+    mock.get_all_tracks_with_tags.return_value = (
+        tracks if tracks is not None else [],
+        tags if tags is not None else [],
+    )
     return mock
 
 
@@ -268,3 +273,103 @@ class TestGetTags:
 
         assert response.status_code == 200
         assert response.json() == []
+
+
+# --- delete_songs tests ---
+
+
+class TestDeleteSongs:
+    """Tests for DELETE /songs."""
+
+    def test_deletes_songs(self):
+        """Should call storage.delete_tracks with correct args."""
+        mock_storage = _make_mock_storage()
+        mock_storage.delete_tracks.return_value = 2
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.request(
+            "DELETE", "/api/songs", json={"video_ids": ["vid1", "vid2"]}
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"deleted": 2}
+        mock_storage.delete_tracks.assert_called_once_with(
+            owner="test_user_123", video_ids=["vid1", "vid2"]
+        )
+
+    def test_returns_401_without_auth(self):
+        """Should return 401 when no JWT is provided."""
+        app.dependency_overrides.clear()
+        response = client.request(
+            "DELETE", "/api/songs", json={"video_ids": ["vid1"]}
+        )
+        assert response.status_code == 401
+
+    def test_rejects_empty_video_ids(self):
+        """Should reject request with empty video_ids list."""
+        mock_storage = _make_mock_storage()
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.request(
+            "DELETE", "/api/songs", json={"video_ids": []}
+        )
+        assert response.status_code == 422
+
+    def test_rejects_missing_video_ids(self):
+        """Should reject request without video_ids field."""
+        mock_storage = _make_mock_storage()
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.request("DELETE", "/api/songs", json={})
+        assert response.status_code == 422
+
+    def test_returns_zero_for_nonexistent_tracks(self):
+        """Should return deleted=0 when tracks don't exist."""
+        mock_storage = _make_mock_storage()
+        mock_storage.delete_tracks.return_value = 0
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.request(
+            "DELETE", "/api/songs", json={"video_ids": ["nonexistent"]}
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"deleted": 0}
+
+
+# --- get_songs_with_tags tests ---
+
+
+class TestGetSongsWithTags:
+    """Tests for GET /songs-with-tags."""
+
+    def test_returns_songs_and_tags(self):
+        """Should return both songs and tags from a single call."""
+        mock_storage = _make_mock_storage(
+            tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS
+        )
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.get("/api/songs-with-tags")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 3
+        assert data["total"] == 3
+        assert len(data["tags"]) == 6
+
+    def test_filters_work_with_combined_endpoint(self):
+        """Should apply tag filters to the combined endpoint."""
+        mock_storage = _make_mock_storage(
+            tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS
+        )
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.get("/api/songs-with-tags?tags=Rock")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["videoId"] == "vid1"
+        # Tags should still reflect all tracks, not filtered ones
+        assert len(data["tags"]) == 6

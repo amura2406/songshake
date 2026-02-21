@@ -139,3 +139,37 @@ class TestFirestoreSongsAdapter:
         assert songs_adapter.get_all_tracks("o") == []
         assert songs_adapter.get_all_history() == {}
         assert songs_adapter.get_task_state("t1") is None
+
+    def test_delete_tracks_removes_ownership_and_orphan(self, songs_adapter):
+        """Should delete both track_owners and orphaned tracks docs."""
+        songs_adapter.save_track({"videoId": "del1", "owner": "alice", "status": "success", "title": "Del1"})
+        songs_adapter.save_track({"videoId": "del2", "owner": "alice", "status": "success", "title": "Del2"})
+
+        deleted = songs_adapter.delete_tracks("alice", ["del1", "del2"])
+
+        assert deleted == 2
+        assert songs_adapter.get_all_tracks("alice") == []
+        # Orphaned global docs should also be gone
+        assert songs_adapter.get_track_by_id("del1") is None
+        assert songs_adapter.get_track_by_id("del2") is None
+
+    def test_delete_tracks_preserves_shared_track(self, songs_adapter):
+        """Shared track should survive when one owner deletes."""
+        songs_adapter.save_track({"videoId": "shared1", "owner": "alice", "status": "success", "title": "Shared"})
+        songs_adapter.save_track({"videoId": "shared1", "owner": "bob", "status": "success", "title": "Shared"})
+
+        deleted = songs_adapter.delete_tracks("alice", ["shared1"])
+
+        assert deleted == 1
+        assert songs_adapter.get_all_tracks("alice") == []
+        # Bob still sees it
+        bob_tracks = songs_adapter.get_all_tracks("bob")
+        assert len(bob_tracks) == 1
+        assert bob_tracks[0]["videoId"] == "shared1"
+        # Global catalog preserved
+        assert songs_adapter.get_track_by_id("shared1") is not None
+
+    def test_delete_tracks_empty_list(self, songs_adapter):
+        """Should return 0 for empty video_ids list."""
+        assert songs_adapter.delete_tracks("alice", []) == 0
+

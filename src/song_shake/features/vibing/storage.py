@@ -11,6 +11,8 @@ from functools import lru_cache
 from typing import Protocol
 from uuid import uuid4
 
+from google.cloud.firestore_v1.base_query import FieldFilter
+
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -106,7 +108,7 @@ class FirestoreVibingAdapter:
     def list_playlists(self, owner: str) -> list[dict]:
         docs = (
             self._db.collection("vibe_playlists")
-            .where("owner", "==", owner)
+            .where(filter=FieldFilter("owner", "==", owner))
             .stream()
         )
         results = [doc.to_dict() for doc in docs]
@@ -191,7 +193,7 @@ class FirestoreVibingAdapter:
         # 1. Get all owner refs (include last_playlisted_at)
         owner_refs = (
             self._db.collection("track_owners")
-            .where("owner", "==", owner)
+            .where(filter=FieldFilter("owner", "==", owner))
             .stream()
         )
 
@@ -213,7 +215,7 @@ class FirestoreVibingAdapter:
             batch = video_ids[i : i + 30]
             docs = (
                 self._db.collection("tracks")
-                .where("videoId", "in", batch)
+                .where(filter=FieldFilter("videoId", "in", batch))
                 .stream()
             )
             for doc in docs:

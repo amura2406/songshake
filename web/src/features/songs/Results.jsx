@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getSongs, getTags, retrySong } from '../../api';
+import { getSongsWithTags, deleteSongs, retrySong } from '../../api';
 import YouTube from 'react-youtube';
 // eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
@@ -57,6 +57,10 @@ const Results = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [retrying, setRetrying] = useState({});  // videoId → 'loading' | 'done' | 'error'
   const [toast, setToast] = useState(null);  // { message, type }
+  const [actionMode, setActionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const limit = 50;
   const totalPages = Math.max(1, Math.ceil(totalSongs / limit));
 
@@ -94,7 +98,6 @@ const Results = () => {
 
   useEffect(() => {
     loadData();
-    loadTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, queryTags, queryBpm.min, queryBpm.max]); // Reload when page or tags query change
 
@@ -114,35 +117,28 @@ const Results = () => {
     return () => clearInterval(interval);
   }, [playerContext, isPlaying, duration]);
 
-  const loadTags = useCallback(async () => {
-    try {
-      const fetchedTags = await getTags();
-      const transformedTags = fetchedTags.map(t => ({ type: t.type, value: t.name, count: t.count }));
-
-      // Ensure that URL tags are also present, even if count is 0
-      queryTags.forEach(qt => {
-        if (!transformedTags.some(t => t.value === qt)) {
-          transformedTags.push({ type: 'unknown', value: qt });
-        }
-      });
-      setTags(transformedTags);
-    } catch (error) {
-      console.error("Failed to fetch available filter tags", error);
-    }
-  }, [queryTags]);
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const tagsString = queryTags.length > 0 ? queryTags.join(',') : null;
-      const response = await getSongs(page * limit, limit, tagsString, queryBpm.min, queryBpm.max);
-      // Support both new { items, total } format and legacy array format
+      const response = await getSongsWithTags(page * limit, limit, tagsString, queryBpm.min, queryBpm.max);
       const items = response.items || response;
       const total = response.total ?? items.length;
       const validSongs = (Array.isArray(items) ? items : []).filter(s => s.videoId);
       setSongs(validSongs);
       setFilteredSongs(validSongs);
       setTotalSongs(total);
+
+      // Tags come from the combined endpoint
+      if (response.tags) {
+        const transformedTags = response.tags.map(t => ({ type: t.type, value: t.name, count: t.count }));
+        queryTags.forEach(qt => {
+          if (!transformedTags.some(t => t.value === qt)) {
+            transformedTags.push({ type: 'unknown', value: qt });
+          }
+        });
+        setTags(transformedTags);
+      }
     } catch (error) {
       console.error("Failed to load songs", error);
     } finally {
@@ -180,6 +176,46 @@ const Results = () => {
   };
 
 
+
+  const toggleActionMode = () => {
+    setActionMode(prev => !prev);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelect = (videoId) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(videoId)) next.delete(videoId);
+      else next.add(videoId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredSongs.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredSongs.map(s => s.videoId)));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setDeleting(true);
+    try {
+      const result = await deleteSongs([...selectedIds]);
+      showToast(`Deleted ${result.deleted} track${result.deleted !== 1 ? 's' : ''} permanently`, 'success');
+      setSelectedIds(new Set());
+      setActionMode(false);
+      loadData();
+    } catch (error) {
+      console.error('Failed to delete songs', error);
+      showToast('Failed to delete tracks. Please try again.', 'warning');
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
@@ -317,6 +353,31 @@ const Results = () => {
             {/* Toolbar */}
             <div className="flex items-center justify-between border-b border-white/5 pb-4">
               <div className="flex flex-wrap items-center gap-6">
+                {/* Action toggle */}
+                <button
+                  onClick={toggleActionMode}
+                  className={`flex items-center gap-1 text-sm font-semibold transition-colors ${actionMode
+                    ? 'text-primary'
+                    : 'text-slate-400 hover:text-white'
+                    }`}
+                  title={actionMode ? 'Exit action mode' : 'Enter action mode'}
+                >
+                  <span className="material-icons text-[16px]">{actionMode ? 'close' : 'checklist'}</span>
+                  <span>Actions</span>
+                </button>
+
+                {actionMode && selectedIds.size > 0 && (
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={deleting}
+                    className="flex items-center gap-1 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-xs font-medium text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors disabled:opacity-50"
+                  >
+                    <span className="material-icons text-[14px]">delete</span>
+                    Delete {selectedIds.size} track{selectedIds.size !== 1 ? 's' : ''}
+                  </button>
+                )}
+
+                <div className="w-px h-4 bg-white/10" />
                 {['genre', 'mood', 'instrument', 'bpm', 'status'].map(type => {
                   let availableTags = tags.filter(t => t.type === type);
                   if (type === 'bpm') availableTags = [{ value: 'bpm' }];
@@ -443,7 +504,16 @@ const Results = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-white/5 bg-surface-darker/50">
-                  <th className="px-4 py-3 font-semibold w-12 text-center">#</th>
+                  <th className="px-4 py-3 font-semibold w-12 text-center">
+                    {actionMode ? (
+                      <input
+                        type="checkbox"
+                        checked={filteredSongs.length > 0 && selectedIds.size === filteredSongs.length}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded border-white/30 bg-transparent accent-primary cursor-pointer"
+                      />
+                    ) : '#'}
+                  </th>
                   <th className="px-4 py-3 font-semibold">Title</th>
                   <th className="px-4 py-3 font-semibold min-w-[220px]">Artist</th>
                   <th className="px-4 py-3 font-semibold">Genre</th>
@@ -464,7 +534,16 @@ const Results = () => {
                       onClick={() => { if (isPlayable) handlePlayPause(song); }}
                     >
                       <td className="px-4 py-4 whitespace-nowrap text-center">
-                        <span className="text-xs text-slate-500 font-mono tabular-nums">{page * limit + index + 1}</span>
+                        {actionMode ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(song.videoId)}
+                            onChange={(e) => { e.stopPropagation(); toggleSelect(song.videoId); }}
+                            className="w-4 h-4 rounded border-white/30 bg-transparent accent-primary cursor-pointer"
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-500 font-mono tabular-nums">{page * limit + index + 1}</span>
+                        )}
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-4">
@@ -636,121 +715,183 @@ const Results = () => {
           )}
         </div>
 
+
+
+        {/* ── Toast Notification ── */}
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 30 }}
+              transition={{ duration: 0.3 }}
+              className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-xs font-medium shadow-lg backdrop-blur-xl border ${toast.type === 'warning'
+                ? 'bg-amber-500/20 border-amber-500/30 text-amber-200'
+                : 'bg-white/10 border-white/20 text-white'
+                }`}
+            >
+              {toast.message}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Fixed Status Bar ── */}
+        <div className="status-bar">
+          {/* Left: track count */}
+          <div className="status-bar__left">
+            <p className="text-xs text-slate-500 whitespace-nowrap">
+              Songs: <span className="text-white font-medium">{totalSongs}</span>
+              {' · '}
+              <span className="text-white font-medium">{songs.length > 0 ? page * limit + 1 : 0}</span>–<span className="text-white font-medium">{Math.min((page + 1) * limit, page * limit + songs.length)}</span>
+            </p>
+          </div>
+
+          {/* Center: trackbar (60%) */}
+          <div className="status-bar__center">
+            {currentSong ? (
+              <>
+                {/* Hidden YouTube player */}
+                <div className="opacity-0 absolute pointer-events-none w-0 h-0 overflow-hidden">
+                  <YouTube
+                    videoId={currentSong.playableVideoId || currentSong.videoId}
+                    opts={{
+                      height: '1',
+                      width: '1',
+                      playerVars: { autoplay: 1, controls: 0 },
+                    }}
+                    onReady={handlePlayerReady}
+                    onStateChange={handlePlayerStateChange}
+                    onError={handlePlayerError}
+                  />
+                </div>
+
+                <button
+                  className="status-bar__btn"
+                  onClick={() => handlePlayPause(currentSong)}
+                  title={isPlaying ? 'Pause' : 'Play'}
+                >
+                  <span className="material-icons text-sm">{isPlaying ? 'pause' : 'play_arrow'}</span>
+                </button>
+                <button
+                  className="status-bar__btn text-rose-400 hover:text-rose-300"
+                  onClick={stopPlayback}
+                  title="Stop"
+                >
+                  <span className="material-icons text-sm">stop</span>
+                </button>
+
+                <span className="status-bar__time">{formatSeconds(playbackProgress)}</span>
+
+                <div className="status-bar__seek" onClick={handleSeek}>
+                  <div className="status-bar__seek-bg">
+                    <div
+                      className="status-bar__seek-fill"
+                      style={{ width: duration ? `${Math.min(100, Math.max(0, (playbackProgress / duration) * 100))}%` : '0%' }}
+                    />
+                  </div>
+                </div>
+
+                <span className="status-bar__time">{formatSeconds(duration)}</span>
+
+                {/* EQ visualiser */}
+                <div className="flex gap-0.5 h-3 ml-1">
+                  <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
+                  <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
+                  <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
+                  <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
+                </div>
+              </>
+
+            ) : (
+              <span className="text-[10px] text-slate-600 italic">No track playing</span>
+            )}
+          </div>
+
+          {/* Right: pagination */}
+          <div className="status-bar__right">
+            <span className="text-[10px] text-slate-500 mr-1">{page + 1}/{totalPages}</span>
+            <button
+              disabled={page === 0}
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <div className="flex items-center bg-surface-darker rounded-lg border border-white/10 p-0.5">
+              <span className="w-7 h-7 flex items-center justify-center rounded bg-primary text-white text-xs font-bold shadow-neon">{page + 1}</span>
+            </div>
+            <button
+              disabled={page + 1 >= totalPages}
+              onClick={() => setPage(p => p + 1)}
+              className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* ── Toast Notification ── */}
+      {/* ── Delete Confirmation Modal ── */}
       <AnimatePresence>
-        {toast && (
+        {showDeleteConfirm && (
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 30 }}
-            transition={{ duration: 0.3 }}
-            className={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-xs font-medium shadow-lg backdrop-blur-xl border ${toast.type === 'warning'
-              ? 'bg-amber-500/20 border-amber-500/30 text-amber-200'
-              : 'bg-white/10 border-white/20 text-white'
-              }`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => !deleting && setShowDeleteConfirm(false)}
           >
-            {toast.message}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="bg-surface-darker border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                  <span className="material-icons text-red-400">delete_forever</span>
+                </div>
+                <div>
+                  <h3 className="text-white font-semibold">Delete {selectedIds.size} track{selectedIds.size !== 1 ? 's' : ''}?</h3>
+                  <p className="text-xs text-slate-400">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-300 mb-6">
+                The selected tracks will be permanently removed from your library.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                  className="px-4 py-2 rounded-lg text-sm text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={deleting}
+                  className="px-4 py-2 rounded-lg text-sm text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {deleting ? (
+                    <>
+                      <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      Deleting…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-icons text-[16px]">delete</span>
+                      Delete Permanently
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* ── Fixed Status Bar ── */}
-      <div className="status-bar">
-        {/* Left: track count */}
-        <div className="status-bar__left">
-          <p className="text-xs text-slate-500 whitespace-nowrap">
-            Songs: <span className="text-white font-medium">{totalSongs}</span>
-            {' · '}
-            <span className="text-white font-medium">{songs.length > 0 ? page * limit + 1 : 0}</span>–<span className="text-white font-medium">{Math.min((page + 1) * limit, page * limit + songs.length)}</span>
-          </p>
-        </div>
-
-        {/* Center: trackbar (60%) */}
-        <div className="status-bar__center">
-          {currentSong ? (
-            <>
-              {/* Hidden YouTube player */}
-              <div className="opacity-0 absolute pointer-events-none w-0 h-0 overflow-hidden">
-                <YouTube
-                  videoId={currentSong.playableVideoId || currentSong.videoId}
-                  opts={{
-                    height: '1',
-                    width: '1',
-                    playerVars: { autoplay: 1, controls: 0 },
-                  }}
-                  onReady={handlePlayerReady}
-                  onStateChange={handlePlayerStateChange}
-                  onError={handlePlayerError}
-                />
-              </div>
-
-              <button
-                className="status-bar__btn"
-                onClick={() => handlePlayPause(currentSong)}
-                title={isPlaying ? 'Pause' : 'Play'}
-              >
-                <span className="material-icons text-sm">{isPlaying ? 'pause' : 'play_arrow'}</span>
-              </button>
-              <button
-                className="status-bar__btn text-rose-400 hover:text-rose-300"
-                onClick={stopPlayback}
-                title="Stop"
-              >
-                <span className="material-icons text-sm">stop</span>
-              </button>
-
-              <span className="status-bar__time">{formatSeconds(playbackProgress)}</span>
-
-              <div className="status-bar__seek" onClick={handleSeek}>
-                <div className="status-bar__seek-bg">
-                  <div
-                    className="status-bar__seek-fill"
-                    style={{ width: duration ? `${Math.min(100, Math.max(0, (playbackProgress / duration) * 100))}%` : '0%' }}
-                  />
-                </div>
-              </div>
-
-              <span className="status-bar__time">{formatSeconds(duration)}</span>
-
-              {/* EQ visualiser */}
-              <div className="flex gap-0.5 h-3 ml-1">
-                <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
-                <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
-                <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
-                <div className={`eq-bar ${isPlaying ? '' : 'animation-none h-1'}`} />
-              </div>
-            </>
-
-          ) : (
-            <span className="text-[10px] text-slate-600 italic">No track playing</span>
-          )}
-        </div>
-
-        {/* Right: pagination */}
-        <div className="status-bar__right">
-          <span className="text-[10px] text-slate-500 mr-1">{page + 1}/{totalPages}</span>
-          <button
-            disabled={page === 0}
-            onClick={() => setPage(p => Math.max(0, p - 1))}
-            className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
-          >
-            Prev
-          </button>
-          <div className="flex items-center bg-surface-darker rounded-lg border border-white/10 p-0.5">
-            <span className="w-7 h-7 flex items-center justify-center rounded bg-primary text-white text-xs font-bold shadow-neon">{page + 1}</span>
-          </div>
-          <button
-            disabled={page + 1 >= totalPages}
-            onClick={() => setPage(p => p + 1)}
-            className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
-          >
-            Next
-          </button>
-        </div>
-      </div>
-    </div>
+    </div >
   );
 };
 

@@ -241,13 +241,15 @@ def get_vibe_playlist_detail(
     # Build track detail list by looking up each videoId from the tracks collection
     from song_shake.platform.firestore_adapter import _firestore_client
 
+    from google.cloud.firestore_v1.base_query import FieldFilter as _FieldFilter
+
     db = _firestore_client()
     tracks_detail: list[VibePlaylistTrack] = []
 
     # Fetch in batches of 30
     for i in range(0, len(video_ids), 30):
         batch = video_ids[i : i + 30]
-        docs = db.collection("tracks").where("videoId", "in", batch).stream()
+        docs = db.collection("tracks").where(filter=_FieldFilter("videoId", "in", batch)).stream()
         track_map = {}
         for doc in docs:
             t = doc.to_dict()
