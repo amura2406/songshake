@@ -97,13 +97,16 @@ class TestFirestoreSongsAdapter:
     def test_enrichment_history_crud(self, songs_adapter):
         """Should save and retrieve enrichment history per owner."""
         songs_adapter.save_enrichment_history("PL1", "owner_1", {
-            "last_processed": "2026-02-20T00:00:00",
+            "timestamp": "2026-02-20T00:00:00",
+            "item_count": 5,
             "status": "completed",
         })
 
         history = songs_adapter.get_enrichment_history("owner_1")
         assert "PL1" in history
         assert history["PL1"]["status"] == "completed"
+        assert history["PL1"]["last_processed"] == "2026-02-20T00:00:00"
+        assert history["PL1"]["item_count"] == 5
 
     def test_get_all_history(self, songs_adapter):
         """Should return history across all owners."""

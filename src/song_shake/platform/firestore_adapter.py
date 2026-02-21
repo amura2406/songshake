@@ -129,8 +129,12 @@ class FirestoreSongsAdapter:
         record = {
             "playlistId": playlist_id,
             "owner": owner,
-            **metadata,
+            "last_processed": metadata.get("timestamp"),
+            "item_count": metadata.get("item_count", 0),
+            "status": metadata.get("status", "completed"),
         }
+        if "error" in metadata:
+            record["error"] = metadata["error"]
         self._db.collection("enrichment_history").document(doc_id).set(
             record, merge=True
         )
@@ -141,13 +145,23 @@ class FirestoreSongsAdapter:
             .where("owner", "==", owner)
             .stream()
         )
-        return {doc.to_dict()["playlistId"]: doc.to_dict() for doc in docs}
+        result = {}
+        for doc in docs:
+            d = doc.to_dict()
+            # Backward compat: legacy docs stored 'timestamp' instead of 'last_processed'
+            if "last_processed" not in d and "timestamp" in d:
+                d["last_processed"] = d["timestamp"]
+            result[d["playlistId"]] = d
+        return result
 
     def get_all_history(self) -> dict:
         docs = self._db.collection("enrichment_history").stream()
         result: dict = {}
         for doc in docs:
             d = doc.to_dict()
+            # Backward compat: legacy docs stored 'timestamp' instead of 'last_processed'
+            if "last_processed" not in d and "timestamp" in d:
+                d["last_processed"] = d["timestamp"]
             result[d["playlistId"]] = d
         return result
 
