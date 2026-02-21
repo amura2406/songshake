@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getSongsWithTags, deleteSongs, retrySong } from '../../api';
 import YouTube from 'react-youtube';
@@ -117,7 +117,11 @@ const Results = () => {
     return () => clearInterval(interval);
   }, [playerContext, isPlaying, duration]);
 
+  const loadingRef = useRef(false);
+
   const loadData = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
       setLoading(true);
       const tagsString = queryTags.length > 0 ? queryTags.join(',') : null;
@@ -143,6 +147,7 @@ const Results = () => {
       console.error("Failed to load songs", error);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   }, [queryTags, page, limit, queryBpm.min, queryBpm.max]);
 

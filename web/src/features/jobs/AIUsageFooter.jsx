@@ -1,9 +1,24 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useAIUsage } from './useAIUsage';
+import { useJobs } from './useJobs';
 
 const AIUsageFooter = () => {
-    const { inputTokens, cost, glowing } = useAIUsage();
+    const { inputTokens, cost, glowing, startPolling, stopPolling } = useAIUsage();
+    const { activeJobs } = useJobs();
+    const wasPollingRef = useRef(false);
+
+    // Start/stop AI usage polling based on active jobs
+    useEffect(() => {
+        const hasActive = activeJobs.some(j => ['pending', 'running'].includes(j.status));
+        if (hasActive && !wasPollingRef.current) {
+            wasPollingRef.current = true;
+            startPolling();
+        } else if (!hasActive && wasPollingRef.current) {
+            wasPollingRef.current = false;
+            stopPolling();
+        }
+    }, [activeJobs, startPolling, stopPolling]);
 
     return (
         <div

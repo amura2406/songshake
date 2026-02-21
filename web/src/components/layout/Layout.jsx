@@ -17,27 +17,17 @@ const Layout = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
-    let intervalId;
-
     const loadData = async () => {
       try {
         const u = await getCurrentUser();
         setUser(u);
 
         if (u) {
-          const fetchTags = async () => {
-            const fetchedTags = await getTags(u.id);
-            const genres = fetchedTags.filter(t => t.type === 'genre');
-            const moods = fetchedTags.filter(t => t.type === 'mood');
-            const status = fetchedTags.filter(t => t.type === 'status');
-            setTags({ genres, moods, status });
-          };
-
-          await fetchTags();
-
-          // Poll tags every 60s to update the stats box dynamically
-          clearInterval(intervalId);
-          intervalId = setInterval(fetchTags, 60000);
+          const fetchedTags = await getTags(u.id);
+          const genres = fetchedTags.filter(t => t.type === 'genre');
+          const moods = fetchedTags.filter(t => t.type === 'mood');
+          const status = fetchedTags.filter(t => t.type === 'status');
+          setTags({ genres, moods, status });
         }
       } catch (error) {
         console.error("Failed to load user or tags", error);
@@ -45,9 +35,7 @@ const Layout = ({ children }) => {
     };
 
     loadData();
-
-    return () => clearInterval(intervalId);
-  }, [location.pathname]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close profile dropdown on outside click
   useEffect(() => {

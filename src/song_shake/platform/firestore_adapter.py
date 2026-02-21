@@ -10,6 +10,7 @@ The firebase-admin SDK must be initialised before using these adapters — this
 happens in storage_factory.py via lazy initialisation on first use.
 """
 
+import time as _time
 from datetime import datetime, timezone
 from functools import lru_cache
 
@@ -39,6 +40,20 @@ def _firestore_client():
 # ---------------------------------------------------------------------------
 
 
+# Per-owner TTL cache for get_all_tracks to prevent repeated Firestore reads.
+# Key: owner str → (monotonic_timestamp, list[dict])
+_tracks_cache: dict[str, tuple[float, list[dict]]] = {}
+_TRACKS_CACHE_TTL = 60  # seconds
+
+
+def _invalidate_tracks_cache(owner: str | None = None) -> None:
+    """Clear the tracks cache for a specific owner or all owners."""
+    if owner is None:
+        _tracks_cache.clear()
+    else:
+        _tracks_cache.pop(owner, None)
+
+
 class FirestoreSongsAdapter:
     """StoragePort implementation backed by Firestore."""
 
@@ -62,7 +77,16 @@ class FirestoreSongsAdapter:
             {"owner": owner, "videoId": video_id}
         )
 
+        _invalidate_tracks_cache(owner)
+
     def get_all_tracks(self, owner: str) -> list[dict]:
+        # Check TTL cache first
+        now = _time.monotonic()
+        if owner in _tracks_cache:
+            cached_at, cached_data = _tracks_cache[owner]
+            if now - cached_at < _TRACKS_CACHE_TTL:
+                return cached_data
+
         # Find all videoIds owned by this user
         owner_refs = (
             self._db.collection("track_owners")
@@ -72,6 +96,7 @@ class FirestoreSongsAdapter:
         video_ids = [doc.to_dict()["videoId"] for doc in owner_refs]
 
         if not video_ids:
+            _tracks_cache[owner] = (now, [])
             return []
 
         # Fetch tracks in batches of 30 (Firestore `in` limit)
@@ -87,6 +112,8 @@ class FirestoreSongsAdapter:
                 t = doc.to_dict()
                 t["owner"] = owner
                 tracks.append(t)
+
+        _tracks_cache[owner] = (now, tracks)
         return tracks
 
     def get_track_by_id(self, video_id: str) -> dict | None:
@@ -188,6 +215,7 @@ class FirestoreSongsAdapter:
             requested=len(video_ids),
             deleted=deleted,
         )
+        _invalidate_tracks_cache(owner)
         return deleted
 
     def get_all_tracks_with_tags(
@@ -292,6 +320,7 @@ class FirestoreSongsAdapter:
             docs = self._db.collection(coll_name).stream()
             for doc in docs:
                 doc.reference.delete()
+        _invalidate_tracks_cache()
 
 
 # ---------------------------------------------------------------------------

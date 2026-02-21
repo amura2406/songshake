@@ -2,12 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getAIUsage } from '../../api';
 
 /**
- * Hook providing all-time AI usage tracking via polling.
- * Returns { inputTokens, outputTokens, cost, glowing }.
- * `glowing` is true briefly whenever values update.
+ * Hook providing all-time AI usage tracking.
+ * Returns { inputTokens, outputTokens, cost, glowing, startPolling, stopPolling }.
  *
- * Polls every 2 seconds for reliable real-time updates on Cloud Run
- * (SSE/EventSource is unreliable on Cloud Run due to HTTP/2 buffering).
+ * Fetches once on mount. Polling (2s) only runs when explicitly started
+ * (e.g. when an enrichment job is active) and stops when told.
  */
 export const useAIUsage = () => {
     const [usage, setUsage] = useState({ inputTokens: 0, outputTokens: 0, cost: 0.0 });
@@ -22,7 +21,7 @@ export const useAIUsage = () => {
         glowTimerRef.current = setTimeout(() => setGlowing(false), 600);
     }, []);
 
-    // Poll for updates
+    // Fetch usage data once
     const fetchUsage = useCallback(async () => {
         try {
             const data = await getAIUsage();
@@ -38,15 +37,31 @@ export const useAIUsage = () => {
                 }
                 return newUsage;
             });
-        } catch (err) {
-            // Silently ignore polling errors (auth expired, network, etc.)
+        } catch {
+            // Silently ignore errors (auth expired, network, etc.)
         }
     }, [triggerGlow]);
 
-    // Initial fetch + polling every 2s
+    // Start polling — called when a job becomes active
+    const startPolling = useCallback(() => {
+        if (intervalRef.current) return; // already polling
+        fetchUsage(); // immediate fetch
+        intervalRef.current = setInterval(fetchUsage, 2000);
+    }, [fetchUsage]);
+
+    // Stop polling — called when no more active jobs
+    const stopPolling = useCallback(() => {
+        if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+        }
+        // One final fetch to get the settled value
+        fetchUsage();
+    }, [fetchUsage]);
+
+    // Initial fetch only (no polling by default)
     useEffect(() => {
         fetchUsage();
-        intervalRef.current = setInterval(fetchUsage, 2000);
 
         return () => {
             clearInterval(intervalRef.current);
@@ -54,5 +69,5 @@ export const useAIUsage = () => {
         };
     }, [fetchUsage]);
 
-    return { ...usage, glowing };
+    return { ...usage, glowing, startPolling, stopPolling };
 };

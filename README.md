@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v1.2.0)
+# Song Shake (v1.3.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** enriches your YouTube Music playlists with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Counts** using **Google Gemini 3 Flash** and **YouTube Music API**.
 
@@ -16,7 +16,7 @@ Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song
 - **Retry Failed Tracks**: Per-track retry with UNPLAYABLE fallback (finds playable alternative via search).
 - **Background Jobs**: Concurrent-safe enrichment with real-time progress via polling.
 - **Bulk Song Deletion**: Select tracks via action mode checkboxes, confirm, and permanently remove from your library with orphan cleanup.
-- **Optimized Firestore Reads**: Combined songs+tags endpoint halves read operations per page load.
+- **Optimized Firestore Reads**: TTL caching, demand-only polling, and call deduplication reduce reads from 363K to <10K/hour. See [docs/firestore-read-optimization.md](docs/firestore-read-optimization.md).
 - **Firestore Storage** (production) / TinyDB (local development).
 - **CLI Tool**: Classic command-line interface for quick operations.
 
@@ -95,7 +95,7 @@ The internal YouTube Music API fails if the Google Account lacks a YouTube Chann
 ### Cost Awareness
 - **Gemini**: ~$0.10/1M input tokens, ~$0.40/1M output tokens (Flash). A 100-song playlist typically costs $0.01–$0.05.
 - **YouTube Data API**: 10,000 units/day quota. Playlist sync costs 50 units per API call (1 create + N inserts). Quota is tracked per-user in Firestore with daily reset at midnight PT.
-- **Cloud Cost Controls**: Budget alerts and resource limits are configured automatically by `deploy.sh`. See [docs/cost-control.md](docs/cost-control.md) for free tier limits and monitoring.
+- **Cloud Cost Controls**: Budget alerts and resource limits are configured automatically by `deploy.sh`. See [docs/cost-control.md](docs/cost-control.md) for free tier limits and [docs/firestore-read-optimization.md](docs/firestore-read-optimization.md) for read reduction strategies.
 
 ## License
 

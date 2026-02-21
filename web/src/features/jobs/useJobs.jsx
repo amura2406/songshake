@@ -9,7 +9,7 @@ export const useJobs = () => {
     return ctx;
 };
 
-export const JobsProvider = ({ user, children }) => {
+export const JobsProvider = ({ user, onActiveJobsChange, children }) => {
     const [activeJobs, setActiveJobs] = useState([]);
     const [jobHistory, setJobHistory] = useState([]);
     const [jobsByPlaylistId, setJobsByPlaylistId] = useState({});
@@ -26,6 +26,17 @@ export const JobsProvider = ({ user, children }) => {
         }
         setJobsByPlaylistId(map);
     }, [activeJobs]);
+
+    // Notify parent (Layout/App) when active job count changes
+    const prevActiveCountRef = useRef(0);
+    useEffect(() => {
+        const hasActive = activeJobs.some(j => ['pending', 'running'].includes(j.status));
+        const count = hasActive ? activeJobs.length : 0;
+        if (count !== prevActiveCountRef.current) {
+            prevActiveCountRef.current = count;
+            onActiveJobsChange?.(count > 0);
+        }
+    }, [activeJobs, onActiveJobsChange]);
 
     const fetchJobs = useCallback(async () => {
         try {
@@ -79,20 +90,42 @@ export const JobsProvider = ({ user, children }) => {
         };
     }, [fetchJobs]);
 
-    // Poll and connect SSE
+    // Adaptive polling: only poll when there are active jobs
+    const startPolling = useCallback(() => {
+        if (pollRef.current) return;
+        pollRef.current = setInterval(fetchJobs, 10000);
+    }, [fetchJobs]);
+
+    const stopPolling = useCallback(() => {
+        if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+        }
+    }, []);
+
+    // Start/stop polling based on active jobs
+    useEffect(() => {
+        const hasActive = activeJobs.some(j => ['pending', 'running'].includes(j.status));
+        if (hasActive) {
+            startPolling();
+        } else {
+            stopPolling();
+        }
+    }, [activeJobs, startPolling, stopPolling]);
+
+    // Initial fetch on mount (single fetch, not polling)
     useEffect(() => {
         if (!user) return;
 
         fetchJobs();
 
-        pollRef.current = setInterval(fetchJobs, 10000);
         return () => {
-            clearInterval(pollRef.current);
+            stopPolling();
             // Close all SSE connections
             Object.values(eventSourcesRef.current).forEach(es => es.close());
             eventSourcesRef.current = {};
         };
-    }, [user, fetchJobs]);
+    }, [user, fetchJobs, stopPolling]);
 
     // Connect SSE for newly discovered active jobs
     useEffect(() => {

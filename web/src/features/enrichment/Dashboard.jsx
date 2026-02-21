@@ -1,12 +1,11 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { getPlaylists, getCurrentUser } from '../../api';
 import { Play, Activity, ListMusic, Loader2, ChevronDown, RefreshCw } from 'lucide-react';
 // eslint-disable-next-line no-unused-vars
 import { motion } from 'framer-motion';
 import { useJobs } from '../jobs/useJobs';
 
-const POLL_INTERVAL_ACTIVE = 10_000;  // 10s when something is processing
-const POLL_INTERVAL_IDLE = 30_000;    // 30s when idle
+
 
 const getTimeAgo = (dateString) => {
   const now = new Date();
@@ -30,14 +29,10 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const { createJob, jobsByPlaylistId } = useJobs();
-  const playlistsRef = useRef(playlists);
   const [startingPlaylistId, setStartingPlaylistId] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(null); // playlistId or null
 
-  // Keep ref in sync with state so the poll closure always reads the latest value
-  useEffect(() => {
-    playlistsRef.current = playlists;
-  }, [playlists]);
+
 
   const loadData = useCallback(async (showLoading = true) => {
     try {
@@ -54,18 +49,6 @@ const Dashboard = () => {
 
   useEffect(() => {
     loadData();
-
-    // Adaptive polling: faster when enrichment is running, slower when idle
-    let timeoutId;
-    const poll = async () => {
-      await loadData(false);
-      const hasRunning = playlistsRef.current.some(p => p.is_running);
-      timeoutId = setTimeout(poll, hasRunning ? POLL_INTERVAL_ACTIVE : POLL_INTERVAL_IDLE);
-    };
-
-    // Start polling after initial load
-    timeoutId = setTimeout(poll, POLL_INTERVAL_IDLE);
-    return () => clearTimeout(timeoutId);
   }, [loadData]);
 
   const handleStartEnrichment = async (playlist, wipe = false) => {
