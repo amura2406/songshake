@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from song_shake.features.enrichment import enrichment
 from song_shake.features.jobs.models import JobStatus
 from song_shake.platform.protocols import JobStoragePort
-from song_shake.platform.storage_factory import get_jobs_storage
+from song_shake.platform.storage_factory import get_jobs_storage, get_songs_storage
 from song_shake.platform.logging_config import get_logger
 
 logger = get_logger(__name__)

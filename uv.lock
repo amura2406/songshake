@@ -1576,7 +1576,7 @@ wheels = [
 
 [[package]]
 name = "song-shake"
-version = "0.15.0"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -1590,6 +1590,7 @@ dependencies = [
     { name = "structlog" },
     { name = "tinydb" },
     { name = "typer" },
+    { name = "tzdata" },
     { name = "uvicorn" },
     { name = "ytmusicapi" },
 ]
@@ -1624,6 +1625,7 @@ requires-dist = [
     { name = "structlog", specifier = ">=24.0.0" },
     { name = "tinydb", specifier = ">=4.8.2" },
     { name = "typer", specifier = ">=0.21.1" },
+    { name = "tzdata", specifier = ">=2024.1" },
     { name = "uvicorn", specifier = ">=0.30.0" },
     { name = "ytmusicapi", specifier = ">=1.11.5" },
 ]
@@ -1706,6 +1708,15 @@ dependencies = [
 sdist = { url = "https://us-python.pkg.dev/artifact-foundry-prod/ah-3p-staging-python/typing-inspection/typing_inspection-0.4.2.tar.gz", hash = "sha256:ba561c48a67c5958007083d386c3295464928b01faa735ab8547c5692e87f464" }
 wheels = [
     { url = "https://us-python.pkg.dev/artifact-foundry-prod/ah-3p-staging-python/typing-inspection/typing_inspection-0.4.2-py3-none-any.whl", hash = "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7" },
+]
+
+[[package]]
+name = "tzdata"
+version = "2025.3"
+source = { registry = "https://us-python.pkg.dev/artifact-foundry-prod/ah-3p-staging-python/simple/" }
+sdist = { url = "https://us-python.pkg.dev/artifact-foundry-prod/ah-3p-staging-python/tzdata/tzdata-2025.3.tar.gz", hash = "sha256:de39c2ca5dc7b0344f2eba86f49d614019d29f060fc4ebc8a417896a620b56a7" }
+wheels = [
+    { url = "https://us-python.pkg.dev/artifact-foundry-prod/ah-3p-staging-python/tzdata/tzdata-2025.3-py2.py3-none-any.whl", hash = "sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1" },
 ]
 
 [[package]]
