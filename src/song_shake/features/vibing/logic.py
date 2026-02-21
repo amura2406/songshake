@@ -50,7 +50,8 @@ def minify_catalog(tracks: list[dict]) -> list[dict]:
     """Strip heavy fields to save Gemini token context.
 
     Returns a list of lightweight dicts with only the fields needed
-    for AI curation.
+    for AI curation, including instruments and vocalType for
+    multi-recipe support.
     """
     minified = []
     for t in tracks:
@@ -62,17 +63,67 @@ def minify_catalog(tracks: list[dict]) -> list[dict]:
         else:
             artist_names = [str(artists_raw)]
 
-        minified.append(
-            {
-                "videoId": t["videoId"],
-                "title": t.get("title", ""),
-                "artist_names": artist_names,
-                "genres": t.get("genres", []),
-                "moods": t.get("moods", []),
-                "bpm": t.get("bpm"),
-            }
-        )
+        entry: dict = {
+            "videoId": t["videoId"],
+            "title": t.get("title", ""),
+            "artist_names": artist_names,
+            "genres": t.get("genres", []),
+            "moods": t.get("moods", []),
+            "bpm": t.get("bpm"),
+            "instruments": t.get("instruments", []),
+            "vocalType": t.get("vocalType"),
+        }
+        minified.append(entry)
     return minified
+
+
+def pre_sort_by_bpm(tracks: list[dict]) -> list[dict]:
+    """Sort minified catalog by BPM ascending.
+
+    Tracks with ``None`` or missing BPM are placed at the end.
+    """
+
+    def _bpm_key(t: dict) -> tuple[int, int]:
+        bpm = t.get("bpm")
+        if bpm is None:
+            return (1, 0)  # None → sort last
+        return (0, int(bpm))
+
+    return sorted(tracks, key=_bpm_key)
+
+
+def validate_no_cross_playlist_duplicates(
+    playlists: list[dict],
+    track_limit: int,
+) -> list[dict]:
+    """Validate and enforce cross-playlist constraints.
+
+    - No track appears in more than one playlist.
+    - Each playlist respects ``track_limit`` (if > 0).
+
+    Duplicates in later playlists are silently removed.
+
+    Returns:
+        The cleaned playlists (same structure, deduplicated).
+    """
+    seen_globally: set[str] = set()
+    cleaned = []
+
+    for pl in playlists:
+        deduped_ids = []
+        for vid in pl.get("curated_video_ids", []):
+            if vid not in seen_globally:
+                seen_globally.add(vid)
+                deduped_ids.append(vid)
+                if 0 < track_limit <= len(deduped_ids):
+                    break
+
+        cleaned.append({
+            **pl,
+            "curated_video_ids": deduped_ids,
+        })
+
+    return cleaned
 
 
 def build_final_playlist(seed_id: str, curated_ids: list[str]) -> list[str]:

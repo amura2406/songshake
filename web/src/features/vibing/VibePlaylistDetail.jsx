@@ -7,6 +7,14 @@ import YouTube from 'react-youtube';
 import { motion, AnimatePresence } from 'framer-motion';
 import TagIcon from '../../components/ui/TagIcon';
 
+const RECIPE_BADGE_COLORS = {
+    neglected_gems: { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/20', label: 'Neglected Gems' },
+    energy_zones: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', label: 'Energy Zones' },
+    aesthetic_universes: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/20', label: 'Aesthetic Universes' },
+    vocal_divide: { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/20', label: 'Vocal Divide' },
+    dj_set_arc: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', label: 'DJ Set Arc' },
+};
+
 const getBpmColor = (bpm) => {
     if (!bpm) return { text: 'text-slate-600', dot: 'bg-slate-600' };
     const n = typeof bpm === 'string' ? parseInt(bpm) : bpm;
@@ -225,6 +233,14 @@ const VibePlaylistDetail = () => {
                         </h2>
                         <p className="text-slate-400 text-sm mt-1">
                             {playlist.tracks?.length || 0} tracks · Created {new Date(playlist.created_at).toLocaleString()}
+                            {(() => {
+                                const badge = RECIPE_BADGE_COLORS[playlist.recipe];
+                                return badge ? (
+                                    <span className={`ml-3 px-2 py-0.5 rounded text-[10px] font-bold ${badge.bg} ${badge.text} border ${badge.border} uppercase tracking-wider`}>
+                                        {badge.label}
+                                    </span>
+                                ) : null;
+                            })()}
                         </p>
                     </div>
 

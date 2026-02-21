@@ -1,10 +1,13 @@
 """FastAPI routes for the Playlist Vibing feature.
 
 Endpoints:
-    POST /vibing/generate         — Run Phases 1-2 (seed selection + Gemini curation)
+    POST /vibing/generate         — Run AI curation (seed-based or multi-recipe)
     GET  /vibing/playlists        — List all vibe playlists for the user
     GET  /vibing/playlists/{id}   — Get a single playlist with full track details
-    POST /vibing/playlists/{id}/approve — Run Phases 3-4 (YouTube sync + write-back)
+    POST /vibing/playlists/{id}/approve — Sync to YouTube + write-back timestamps
+    DELETE /vibing/playlists/{id} — Delete a playlist
+    GET  /vibing/quota            — YouTube API quota usage
+    POST /vibing/quota/seed       — Manually add quota units
 """
 
 import time
@@ -14,16 +17,18 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 
 from song_shake.features.auth.dependencies import get_current_user
-from song_shake.features.vibing.gemini_adapter import curate_playlist
+from song_shake.features.vibing.gemini_adapter import curate_multi_playlist, curate_playlist
 from song_shake.features.vibing.logic import (
     build_final_playlist,
     extract_artist_string,
     select_seed_track,
+    validate_no_cross_playlist_duplicates,
 )
 from song_shake.features.vibing.models import (
     VibePlaylistDetailResponse,
     VibePlaylistResponse,
     VibePlaylistTrack,
+    VibeRecipe,
     VibeRequest,
 )
 from song_shake.features.vibing.storage import VibingStoragePort
@@ -42,21 +47,92 @@ router = APIRouter(prefix="/vibing", tags=["vibing"])
 
 
 # ---------------------------------------------------------------------------
-# POST /vibing/generate — Phases 1 + 2
+# Helpers
 # ---------------------------------------------------------------------------
 
 
-@router.post("/generate", response_model=VibePlaylistResponse)
+def _recipe_label(recipe: VibeRecipe) -> str:
+    """Human-readable recipe label for logging."""
+    return {
+        VibeRecipe.NEGLECTED_GEMS: "Neglected Gems",
+        VibeRecipe.ENERGY_ZONES: "Energy Zones",
+        VibeRecipe.AESTHETIC_UNIVERSES: "Aesthetic Universes",
+        VibeRecipe.VOCAL_DIVIDE: "Vocal Divide",
+        VibeRecipe.DJ_SET_ARC: "DJ Set Arc",
+    }.get(recipe, recipe.value)
+
+
+def _track_ai_usage(
+    job_store: JobStoragePort,
+    owner: str,
+    ai_usage: dict,
+    correlation_id: str,
+) -> None:
+    """Track AI usage in the global counter (non-fatal on failure)."""
+    try:
+        job_store.update_ai_usage(
+            owner,
+            ai_usage.get("input_tokens", 0),
+            ai_usage.get("output_tokens", 0),
+            ai_usage.get("cost", 0.0),
+        )
+    except Exception as exc:
+        logger.warning("ai_usage_update_failed", correlationId=correlation_id, error=str(exc))
+
+
+def _pick_unique_title(candidates: list[str], used: set[str]) -> str:
+    """Pick the first candidate title that hasn't been used yet.
+
+    Falls back to the first candidate with a numeric suffix if all are taken.
+    """
+    for title in candidates:
+        if title not in used:
+            return title
+
+    # All 20 candidates used — append a suffix to the first one
+    base = candidates[0] if candidates else "Untitled Playlist"
+    counter = 2
+    while f"{base} ({counter})" in used:
+        counter += 1
+    return f"{base} ({counter})"
+
+
+def _build_playlist_response(playlist: dict) -> VibePlaylistResponse:
+    """Build a VibePlaylistResponse from a stored playlist dict."""
+    return VibePlaylistResponse(
+        id=playlist["id"],
+        owner=playlist["owner"],
+        title=playlist["title"],
+        description=playlist.get("description", ""),
+        seed_video_id=playlist.get("seed_video_id", ""),
+        seed_title=playlist.get("seed_title", ""),
+        seed_artist=playlist.get("seed_artist", ""),
+        video_ids=playlist.get("video_ids", []),
+        status=playlist["status"],
+        youtube_playlist_id=playlist.get("youtube_playlist_id"),
+        created_at=playlist["created_at"],
+        track_count=len(playlist.get("video_ids", [])),
+        recipe=playlist.get("recipe", "neglected_gems"),
+        batch_id=playlist.get("batch_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /vibing/generate
+# ---------------------------------------------------------------------------
+
+
+@router.post("/generate")
 def generate_vibe_playlist(
     req: VibeRequest,
     user: dict = Depends(get_current_user),
     storage: VibingStoragePort = Depends(get_vibing_storage),
     job_store: JobStoragePort = Depends(get_jobs_storage),
-):
-    """Generate an AI-curated vibe playlist.
+) -> VibePlaylistResponse | list[VibePlaylistResponse]:
+    """Generate AI-curated vibe playlist(s) based on the selected recipe.
 
-    Phase 1: Fetch tracks from Firestore, select the neglected seed.
-    Phase 2: Call Gemini to curate a cohesive playlist.
+    - Neglected Gems: single playlist (seed-based)
+    - Energy Zones / Aesthetic Universes / Vocal Divide / DJ Set Arc: multi-playlist
     """
     owner = user["sub"]
     correlation_id = str(uuid4())[:8]
@@ -67,10 +143,11 @@ def generate_vibe_playlist(
         operation="generate_vibe",
         correlationId=correlation_id,
         userId=owner,
+        recipe=req.recipe.value,
         track_count=req.track_count,
     )
 
-    # Phase 1: Firestore ingestion + seed selection
+    # Fetch all tracks
     try:
         tracks = storage.get_tracks_for_owner(owner)
     except Exception as exc:
@@ -81,15 +158,38 @@ def generate_vibe_playlist(
         )
         raise HTTPException(status_code=500, detail="Failed to fetch tracks from Firestore.")
 
-    if len(tracks) < req.track_count + 1:
+    # Validate minimum track count
+    min_required = 50 if req.recipe == VibeRecipe.DJ_SET_ARC else req.track_count + 1
+    if len(tracks) < min_required:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Not enough music tracks. Need at least {req.track_count + 1}, "
+                f"Not enough music tracks. Need at least {min_required}, "
                 f"but found {len(tracks)}."
             ),
         )
 
+    # Dispatch by recipe
+    if req.recipe == VibeRecipe.NEGLECTED_GEMS:
+        return _generate_neglected_gems(
+            req, tracks, owner, correlation_id, start, storage, job_store,
+        )
+
+    return _generate_multi_recipe(
+        req, tracks, owner, correlation_id, start, storage, job_store,
+    )
+
+
+def _generate_neglected_gems(
+    req: VibeRequest,
+    tracks: list[dict],
+    owner: str,
+    correlation_id: str,
+    start: float,
+    storage: VibingStoragePort,
+    job_store: JobStoragePort,
+) -> VibePlaylistResponse:
+    """Original seed-based curation flow."""
     seed, remaining = select_seed_track(tracks)
     seed_title = seed.get("title", "Unknown")
     seed_artist = extract_artist_string(seed)
@@ -103,31 +203,16 @@ def generate_vibe_playlist(
         catalog_size=len(remaining),
     )
 
-    # Phase 2: Gemini curation
     try:
         gemini_result, ai_usage = curate_playlist(seed, remaining, req.track_count)
     except RuntimeError as exc:
-        logger.error(
-            "generate_vibe_gemini_failed",
-            correlationId=correlation_id,
-            error=str(exc),
-        )
+        logger.error("generate_vibe_gemini_failed", correlationId=correlation_id, error=str(exc))
         raise HTTPException(status_code=502, detail=str(exc))
 
-    # Track AI usage in the global counter
-    try:
-        job_store.update_ai_usage(
-            owner,
-            ai_usage.get("input_tokens", 0),
-            ai_usage.get("output_tokens", 0),
-            ai_usage.get("cost", 0.0),
-        )
-    except Exception as exc:
-        logger.warning("ai_usage_update_failed", correlationId=correlation_id, error=str(exc))
+    _track_ai_usage(job_store, owner, ai_usage, correlation_id)
 
     final_ids = build_final_playlist(seed["videoId"], gemini_result.curated_video_ids)
 
-    # Save as draft playlist
     playlist_id = str(uuid4())
     now = datetime.now(timezone.utc).isoformat()
     playlist_doc = {
@@ -143,16 +228,14 @@ def generate_vibe_playlist(
         "youtube_playlist_id": None,
         "created_at": now,
         "updated_at": now,
+        "recipe": VibeRecipe.NEGLECTED_GEMS.value,
+        "batch_id": None,
     }
 
     try:
         storage.save_playlist(playlist_doc)
     except Exception as exc:
-        logger.error(
-            "generate_vibe_save_failed",
-            correlationId=correlation_id,
-            error=str(exc),
-        )
+        logger.error("generate_vibe_save_failed", correlationId=correlation_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Failed to save playlist.")
 
     duration_ms = int((time.monotonic() - start) * 1000)
@@ -161,26 +244,113 @@ def generate_vibe_playlist(
         operation="generate_vibe",
         correlationId=correlation_id,
         userId=owner,
+        recipe="neglected_gems",
         playlist_id=playlist_id,
         playlist_title=gemini_result.generated_playlist_title,
         track_count=len(final_ids),
         duration=duration_ms,
     )
 
-    return VibePlaylistResponse(
-        id=playlist_id,
-        owner=owner,
-        title=gemini_result.generated_playlist_title,
-        description=gemini_result.description,
-        seed_video_id=seed["videoId"],
-        seed_title=seed_title,
-        seed_artist=seed_artist,
-        video_ids=final_ids,
-        status="draft",
-        youtube_playlist_id=None,
-        created_at=now,
-        track_count=len(final_ids),
+    return _build_playlist_response(playlist_doc)
+
+
+def _generate_multi_recipe(
+    req: VibeRequest,
+    tracks: list[dict],
+    owner: str,
+    correlation_id: str,
+    start: float,
+    storage: VibingStoragePort,
+    job_store: JobStoragePort,
+) -> list[VibePlaylistResponse]:
+    """Multi-playlist generation for Energy Zones, Aesthetic Universes, etc."""
+    track_count = req.track_count
+    if req.recipe == VibeRecipe.DJ_SET_ARC:
+        track_count = 50  # Always 50 for DJ Set Arc
+
+    try:
+        gemini_result, ai_usage = curate_multi_playlist(req.recipe, tracks, track_count)
+    except RuntimeError as exc:
+        logger.error(
+            "generate_vibe_gemini_failed",
+            correlationId=correlation_id,
+            recipe=req.recipe.value,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    _track_ai_usage(job_store, owner, ai_usage, correlation_id)
+
+    # Validate: no duplicate tracks across playlists.
+    # DJ Set Arc uses limit=0 because the prompt already constrains to 50.
+    dedup_limit = 0 if req.recipe == VibeRecipe.DJ_SET_ARC else track_count
+    raw_playlists = [
+        {"curated_video_ids": p.curated_video_ids}
+        for p in gemini_result.playlists
+    ]
+    cleaned = validate_no_cross_playlist_duplicates(raw_playlists, dedup_limit)
+
+    # Gather existing playlist titles for this user to avoid name collisions
+    existing_playlists = storage.list_playlists(owner)
+    used_titles: set[str] = {p["title"] for p in existing_playlists}
+
+    # Save each sub-playlist
+    batch_id = str(uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    responses: list[VibePlaylistResponse] = []
+
+    for idx, entry in enumerate(gemini_result.playlists):
+        playlist_id = str(uuid4())
+        video_ids = cleaned[idx]["curated_video_ids"] if idx < len(cleaned) else []
+
+        # Pick the first candidate title not already used
+        title = _pick_unique_title(entry.candidate_titles, used_titles)
+        used_titles.add(title)  # Prevent collision within this batch too
+
+        playlist_doc = {
+            "id": playlist_id,
+            "owner": owner,
+            "title": title,
+            "description": entry.description,
+            "seed_video_id": "",
+            "seed_title": "",
+            "seed_artist": "",
+            "video_ids": video_ids,
+            "status": "draft",
+            "youtube_playlist_id": None,
+            "created_at": now,
+            "updated_at": now,
+            "recipe": req.recipe.value,
+            "batch_id": batch_id,
+        }
+
+        try:
+            storage.save_playlist(playlist_doc)
+        except Exception as exc:
+            logger.error(
+                "generate_vibe_save_failed",
+                correlationId=correlation_id,
+                playlist_index=idx,
+                error=str(exc),
+            )
+            raise HTTPException(status_code=500, detail="Failed to save playlist.")
+
+        responses.append(_build_playlist_response(playlist_doc))
+
+    duration_ms = int((time.monotonic() - start) * 1000)
+    logger.info(
+        "generate_vibe_multi_success",
+        operation="generate_vibe",
+        correlationId=correlation_id,
+        userId=owner,
+        recipe=req.recipe.value,
+        batch_id=batch_id,
+        playlist_count=len(responses),
+        total_tracks=sum(r.track_count for r in responses),
+        duration=duration_ms,
     )
+
+    return responses
 
 
 # ---------------------------------------------------------------------------
@@ -198,23 +368,7 @@ def list_vibe_playlists(
     logger.info("list_vibe_playlists", userId=owner)
 
     playlists = storage.list_playlists(owner)
-    return [
-        VibePlaylistResponse(
-            id=p["id"],
-            owner=p["owner"],
-            title=p["title"],
-            description=p.get("description", ""),
-            seed_video_id=p["seed_video_id"],
-            seed_title=p.get("seed_title", ""),
-            seed_artist=p.get("seed_artist", ""),
-            video_ids=p.get("video_ids", []),
-            status=p["status"],
-            youtube_playlist_id=p.get("youtube_playlist_id"),
-            created_at=p["created_at"],
-            track_count=len(p.get("video_ids", [])),
-        )
-        for p in playlists
-    ]
+    return [_build_playlist_response(p) for p in playlists]
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +421,7 @@ def get_vibe_playlist_detail(
                         year=t.get("year"),
                         genres=t.get("genres", []),
                         moods=t.get("moods", []),
+                        instruments=t.get("instruments", []),
                         bpm=t.get("bpm"),
                         thumbnails=t.get("thumbnails", []),
                         is_seed=(t["videoId"] == seed_id),
@@ -287,11 +442,13 @@ def get_vibe_playlist_detail(
         youtube_playlist_id=playlist.get("youtube_playlist_id"),
         created_at=playlist["created_at"],
         tracks=tracks_detail,
+        recipe=playlist.get("recipe", "neglected_gems"),
+        batch_id=playlist.get("batch_id"),
     )
 
 
 # ---------------------------------------------------------------------------
-# POST /vibing/playlists/{id}/approve — Phases 3 + 4
+# POST /vibing/playlists/{id}/approve — YouTube sync
 # ---------------------------------------------------------------------------
 
 YOUTUBE_DAILY_LIMIT = 10_000
@@ -317,11 +474,7 @@ def approve_vibe_playlist(
     storage: VibingStoragePort = Depends(get_vibing_storage),
     token_store: TokenStoragePort = Depends(get_token_storage),
 ):
-    """Approve a draft playlist: sync to YouTube and write back timestamps.
-
-    Phase 3: Create YouTube playlist + insert items.
-    Phase 4: Batch-update ``last_playlisted_at`` on track_owners.
-    """
+    """Approve a draft playlist: sync to YouTube and write back timestamps."""
     owner = user["sub"]
     correlation_id = str(uuid4())[:8]
     start = time.monotonic()
@@ -403,7 +556,7 @@ def approve_vibe_playlist(
     access_token = tokens["access_token"]
     title = playlist["title"]
 
-    # Phase 3: YouTube sync (with quota tracking callback)
+    # YouTube sync (with quota tracking callback)
     def _on_quota_used(units: int) -> None:
         try:
             storage.increment_youtube_quota(owner, units)
@@ -422,7 +575,7 @@ def approve_vibe_playlist(
         )
         raise HTTPException(status_code=502, detail=f"YouTube sync failed: {exc}")
 
-    # Phase 4: Firestore write-back
+    # Firestore write-back
     try:
         storage.write_back_last_playlisted(owner, video_ids)
     except Exception as exc:
@@ -431,8 +584,7 @@ def approve_vibe_playlist(
             correlationId=correlation_id,
             error=str(exc),
         )
-        # Don't fail the whole operation — YouTube playlist was created.
-        # Log the error and continue.
+        # Don't fail — YouTube playlist was already created.
 
     # Update playlist status
     storage.update_playlist_status(playlist_id, owner, "synced", yt_playlist_id)
@@ -511,4 +663,3 @@ def seed_youtube_quota(
         "units_used": result.get("units_used", 0),
         "units_limit": YOUTUBE_DAILY_LIMIT,
     }
-

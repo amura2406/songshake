@@ -192,8 +192,8 @@ export const retrySong = async (videoId) => {
 
 // --- Vibing (AI DJ) APIs ---
 
-export const generateVibe = async (trackCount = 49) => {
-  const res = await api.post('/api/vibing/generate', { track_count: trackCount });
+export const generateVibe = async (trackCount = 49, recipe = 'neglected_gems') => {
+  const res = await api.post('/api/vibing/generate', { track_count: trackCount, recipe });
   return res.data;
 };
 
