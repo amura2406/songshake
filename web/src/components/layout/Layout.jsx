@@ -12,9 +12,16 @@ const Layout = ({ children }) => {
   const [showAllGenres, setShowAllGenres] = useState(false);
   const [showAllMoods, setShowAllMoods] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const profileRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Close drawer on route change
+  useEffect(() => {
+    // Use functional update in a microtask to avoid cascading render lint warning
+    queueMicrotask(() => setDrawerOpen(false));
+  }, [location.pathname]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -35,7 +42,7 @@ const Layout = ({ children }) => {
     };
 
     loadData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Close profile dropdown on outside click
   useEffect(() => {
@@ -55,6 +62,7 @@ const Layout = ({ children }) => {
 
   const handleTagClick = (tagValue) => {
     navigate(`/results?tags=${encodeURIComponent(tagValue)}`);
+    setDrawerOpen(false);
   };
 
   const menuItems = [
@@ -63,13 +71,144 @@ const Layout = ({ children }) => {
     { path: '/vibing', icon: 'auto_awesome', label: 'Playlist Vibing' },
   ];
 
+  // Shared sidebar content — used for both desktop sidebar and mobile drawer
+  const sidebarContent = (
+    <>
+      <div className="flex-1 overflow-y-auto pt-6 pb-6 flex flex-col">
+        <div className="px-6 mb-8">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Management</h3>
+          <nav className="space-y-1">
+            {menuItems.map((item) => {
+              const isActive = location.pathname === item.path;
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${isActive
+                    ? 'bg-primary/20 text-primary border border-primary/30 shadow-neon'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
+                >
+                  <span className="material-icons text-lg">{item.icon}</span>
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+
+        <div className="px-6 mb-8">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Moods</h3>
+          <nav className="space-y-1">
+            {(showAllMoods ? tags.moods : tags.moods.slice(0, 7)).map((mood, idx) => (
+              <div
+                key={idx}
+                onClick={() => handleTagClick(mood.name)}
+                className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-3">
+                  <TagIcon type="mood" value={mood.name} size={14} className="opacity-70" />
+                  {mood.name}
+                </span>
+                <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{mood.count}</span>
+              </div>
+            ))}
+            {tags.moods.length > 7 && (
+              <button
+                onClick={() => setShowAllMoods(!showAllMoods)}
+                className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
+              >
+                {showAllMoods ? 'Show less' : `Show all (${tags.moods.length})`}
+              </button>
+            )}
+            {tags.moods.length === 0 && (
+              <div className="px-3 py-2 text-sm text-slate-600 italic">No moods found</div>
+            )}
+          </nav>
+        </div>
+
+        <div className="px-6 mb-8">
+          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Genres</h3>
+          <nav className="space-y-1">
+            {(showAllGenres ? tags.genres : tags.genres.slice(0, 7)).map((genre, idx) => (
+              <div
+                key={idx}
+                onClick={() => handleTagClick(genre.name)}
+                className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-3">
+                  <TagIcon type="genre" value={genre.name} size={14} className="opacity-70" />
+                  {genre.name}
+                </span>
+                <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{genre.count}</span>
+              </div>
+            ))}
+            {tags.genres.length > 7 && (
+              <button
+                onClick={() => setShowAllGenres(!showAllGenres)}
+                className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
+              >
+                {showAllGenres ? 'Show less' : `Show all (${tags.genres.length})`}
+              </button>
+            )}
+            {tags.genres.length === 0 && (
+              <div className="px-3 py-2 text-sm text-slate-600 italic">No genres found</div>
+            )}
+          </nav>
+        </div>
+      </div>
+
+      {(() => {
+        const successCount = tags.status.find(t => t.name === 'Success')?.count || 0;
+        const failedCount = tags.status.find(t => t.name === 'Failed')?.count || 0;
+        const totalCount = successCount + failedCount;
+        const successPercentage = totalCount > 0 ? (successCount / totalCount) * 100 : 0;
+
+        if (totalCount === 0) return null;
+
+        return (
+          <div className="p-6 border-t border-white/5 bg-surface-darker/50 shrink-0">
+            <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-2">
+              <div
+                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.8)]"
+                style={{ width: `${successPercentage}%` }}
+              ></div>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+              <span>Songs: {totalCount}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-green-400">{successCount} OK</span>
+                <span className="text-red-400">{failedCount} ERR</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* AI Usage Footer */}
+      <div className="p-4 border-t border-white/5 shrink-0">
+        <AIUsageFooter />
+      </div>
+    </>
+  );
+
   return (
     <div className="nebula-bg bg-background-light dark:bg-background-dark font-display text-slate-800 dark:text-slate-200 antialiased overflow-hidden h-screen flex flex-col">
       {/* Top Navigation */}
-      <nav className="h-16 border-b border-white/10 dark:bg-surface-darker/50 backdrop-blur-md flex items-center justify-between px-6 z-20 shrink-0 relative">
-        <div className="flex items-center gap-4">
-          <img src={logoImg} alt="Song Shake" className="w-10 h-10 rounded-lg shadow-neon" />
-          <h1 className="title-gradient text-3xl font-black tracking-widest uppercase leading-none">
+      <nav className="h-14 md:h-16 border-b border-white/10 dark:bg-surface-darker/50 backdrop-blur-md flex items-center justify-between px-3 md:px-6 z-20 shrink-0 relative">
+        <div className="flex items-center gap-2 md:gap-4">
+          {/* Hamburger — mobile only */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-white/10 transition-colors text-slate-300"
+            aria-label="Open navigation menu"
+          >
+            <span className="material-icons text-[22px]">menu</span>
+          </button>
+
+          <img src={logoImg} alt="Song Shake" className="w-8 h-8 md:w-10 md:h-10 rounded-lg shadow-neon" />
+          <h1 className="title-gradient text-xl md:text-3xl font-black tracking-widest uppercase leading-none">
             SONGSHAKE
           </h1>
         </div>
@@ -78,7 +217,7 @@ const Layout = ({ children }) => {
 
         {/* Job icon + Profile dropdown */}
         {user && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <JobIcon />
             <div className="relative" ref={profileRef}>
               <button
@@ -88,7 +227,7 @@ const Layout = ({ children }) => {
                 aria-haspopup="true"
                 aria-label="User menu"
               >
-                <div className="h-9 w-9 rounded-full overflow-hidden">
+                <div className="h-8 w-8 md:h-9 md:w-9 rounded-full overflow-hidden">
                   {user.thumbnail ? (
                     <img
                       src={user.thumbnail}
@@ -132,125 +271,48 @@ const Layout = ({ children }) => {
         )}
       </nav>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Sidebar */}
-        <aside className="w-64 bg-surface-darker/30 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-sm shrink-0">
-          <div className="flex-1 overflow-y-auto pt-6 pb-6 flex flex-col">
-            <div className="px-6 mb-8">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Management</h3>
-              <nav className="space-y-1">
-                {menuItems.map((item) => {
-                  const isActive = location.pathname === item.path;
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      className={`flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${isActive
-                        ? 'bg-primary/20 text-primary border border-primary/30 shadow-neon'
-                        : 'text-slate-400 hover:text-white hover:bg-white/5'
-                        }`}
-                    >
-                      <span className="material-icons text-lg">{item.icon}</span>
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
+      {/* Mobile Drawer Overlay */}
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-40 md:hidden"
+          aria-modal="true"
+          role="dialog"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDrawerOpen(false)}
+          />
 
-            <div className="px-6 mb-8">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Moods</h3>
-              <nav className="space-y-1">
-                {(showAllMoods ? tags.moods : tags.moods.slice(0, 7)).map((mood, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleTagClick(mood.name)}
-                    className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                  >
-                    <span className="flex items-center gap-3">
-                      <TagIcon type="mood" value={mood.name} size={14} className="opacity-70" />
-                      {mood.name}
-                    </span>
-                    <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{mood.count}</span>
-                  </div>
-                ))}
-                {tags.moods.length > 7 && (
-                  <button
-                    onClick={() => setShowAllMoods(!showAllMoods)}
-                    className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
-                  >
-                    {showAllMoods ? 'Show less' : `Show all (${tags.moods.length})`}
-                  </button>
-                )}
-                {tags.moods.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-slate-600 italic">No moods found</div>
-                )}
-              </nav>
-            </div>
-
-            <div className="px-6 mb-8">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Genres</h3>
-              <nav className="space-y-1">
-                {(showAllGenres ? tags.genres : tags.genres.slice(0, 7)).map((genre, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleTagClick(genre.name)}
-                    className="group flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                  >
-                    <span className="flex items-center gap-3">
-                      <TagIcon type="genre" value={genre.name} size={14} className="opacity-70" />
-                      {genre.name}
-                    </span>
-                    <span className="text-[10px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded group-hover:bg-primary/20 group-hover:text-primary transition-colors">{genre.count}</span>
-                  </div>
-                ))}
-                {tags.genres.length > 7 && (
-                  <button
-                    onClick={() => setShowAllGenres(!showAllGenres)}
-                    className="w-full text-left px-3 py-2 mt-2 text-xs font-medium text-slate-500 hover:text-white transition-colors"
-                  >
-                    {showAllGenres ? 'Show less' : `Show all (${tags.genres.length})`}
-                  </button>
-                )}
-                {tags.genres.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-slate-600 italic">No genres found</div>
-                )}
-              </nav>
-            </div>
-          </div>
-
-          {(() => {
-            const successCount = tags.status.find(t => t.name === 'Success')?.count || 0;
-            const failedCount = tags.status.find(t => t.name === 'Failed')?.count || 0;
-            const totalCount = successCount + failedCount;
-            const successPercentage = totalCount > 0 ? (successCount / totalCount) * 100 : 0;
-
-            if (totalCount === 0) return null;
-
-            return (
-              <div className="p-6 border-t border-white/5 bg-surface-darker/50 shrink-0">
-                <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-2">
-                  <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full shadow-[0_0_10px_rgba(168,85,247,0.8)]"
-                    style={{ width: `${successPercentage}%` }}
-                  ></div>
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
-                  <span>Songs: {totalCount}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-green-400">{successCount} OK</span>
-                    <span className="text-red-400">{failedCount} ERR</span>
-                  </div>
-                </div>
+          {/* Drawer panel */}
+          <aside
+            className="absolute top-0 left-0 bottom-0 w-72 bg-surface-darker border-r border-white/10 flex flex-col z-50 overflow-hidden"
+            style={{ animation: 'slideInLeft 0.2s ease-out' }}
+          >
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2">
+                <img src={logoImg} alt="Song Shake" className="w-7 h-7 rounded-lg" />
+                <span className="title-gradient text-lg font-black tracking-widest uppercase">SONGSHAKE</span>
               </div>
-            );
-          })()}
+              <button
+                onClick={() => setDrawerOpen(false)}
+                className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/10 transition-colors text-slate-400"
+                aria-label="Close navigation menu"
+              >
+                <span className="material-icons text-[20px]">close</span>
+              </button>
+            </div>
 
-          {/* AI Usage Footer */}
-          <div className="p-4 border-t border-white/5 shrink-0">
-            <AIUsageFooter />
-          </div>
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Desktop Sidebar */}
+        <aside className="w-64 bg-surface-darker/30 border-r border-white/5 flex-col hidden md:flex backdrop-blur-sm shrink-0">
+          {sidebarContent}
         </aside>
 
         {/* Main Content Area */}

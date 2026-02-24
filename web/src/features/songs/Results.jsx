@@ -322,7 +322,7 @@ const Results = () => {
 
   return (
     <div className="flex-1 overflow-y-auto scroll-smooth bg-surface-darker/20 relative flex flex-col pb-14">
-      <div className="px-6 py-4 flex-1">
+      <div className="px-3 py-3 md:px-6 md:py-4 flex-1">
 
         {/* Minimal Toolbar Filters */}
         {tags.length > 0 && (
@@ -357,11 +357,11 @@ const Results = () => {
 
             {/* Toolbar */}
             <div className="flex items-center justify-between border-b border-white/5 pb-4">
-              <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-3 md:gap-6 overflow-x-auto scrollbar-hide pb-1 -mb-1">
                 {/* Action toggle */}
                 <button
                   onClick={toggleActionMode}
-                  className={`flex items-center gap-1 text-sm font-semibold transition-colors ${actionMode
+                  className={`flex items-center gap-1 text-sm font-semibold transition-colors shrink-0 ${actionMode
                     ? 'text-primary'
                     : 'text-slate-400 hover:text-white'
                     }`}
@@ -375,14 +375,14 @@ const Results = () => {
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
                     disabled={deleting}
-                    className="flex items-center gap-1 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-xs font-medium text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-xs font-medium text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors disabled:opacity-50 shrink-0"
                   >
                     <span className="material-icons text-[14px]">delete</span>
                     Delete {selectedIds.size} track{selectedIds.size !== 1 ? 's' : ''}
                   </button>
                 )}
 
-                <div className="w-px h-4 bg-white/10" />
+                <div className="w-px h-4 bg-white/10 shrink-0" />
                 {['genre', 'mood', 'instrument', 'bpm', 'status'].map(type => {
                   let availableTags = tags.filter(t => t.type === type);
                   if (type === 'bpm') availableTags = [{ value: 'bpm' }];
@@ -394,7 +394,7 @@ const Results = () => {
                     <button
                       key={type}
                       onClick={() => setActiveDropdown(isActiveDropdown ? null : type)}
-                      className={`flex items-center gap-1 text-sm font-semibold transition-colors relative ${isActiveDropdown ? 'text-white' : 'text-slate-400 hover:text-white capitalize'}`}
+                      className={`flex items-center gap-1 text-sm font-semibold transition-colors relative shrink-0 ${isActiveDropdown ? 'text-white' : 'text-slate-400 hover:text-white capitalize'}`}
                     >
                       <span className="capitalize">{type}</span>
                       <span className="material-icons text-[16px] leading-none mb-0.5">{isActiveDropdown ? 'expand_less' : 'expand_more'}</span>
@@ -495,7 +495,7 @@ const Results = () => {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div>
           {loading ? (
             <div className="flex justify-center p-12">
               <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
@@ -506,217 +506,342 @@ const Results = () => {
               <p>No tracks found. Clear filters or load a playlist.</p>
             </div>
           ) : (
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-white/5 bg-surface-darker/50">
-                  <th className="px-4 py-3 font-semibold w-12 text-center">
-                    {actionMode ? (
-                      <input
-                        type="checkbox"
-                        checked={filteredSongs.length > 0 && selectedIds.size === filteredSongs.length}
-                        onChange={toggleSelectAll}
-                        className="w-4 h-4 rounded border-white/30 bg-transparent accent-primary cursor-pointer"
-                      />
-                    ) : '#'}
-                  </th>
-                  <th className="px-4 py-3 font-semibold">Title</th>
-                  <th className="px-4 py-3 font-semibold min-w-[220px]">Artist</th>
-                  <th className="px-4 py-3 font-semibold">Genre</th>
-                  <th className="px-4 py-3 font-semibold">Mood</th>
-                  <th className="px-4 py-3 font-semibold">Instrument</th>
-                  <th className="px-4 py-3 font-semibold text-center">BPM</th>
-                  <th className="px-4 py-3 font-semibold text-center">Plays</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm divide-y divide-white/5">
-                {filteredSongs.map((song, index) => {
+            <>
+              {/* === Desktop Table (md+) === */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-white/5 bg-surface-darker/50">
+                      <th className="px-4 py-3 font-semibold w-12 text-center">
+                        {actionMode ? (
+                          <input
+                            type="checkbox"
+                            checked={filteredSongs.length > 0 && selectedIds.size === filteredSongs.length}
+                            onChange={toggleSelectAll}
+                            className="w-4 h-4 rounded border-white/30 bg-transparent accent-primary cursor-pointer"
+                          />
+                        ) : '#'}
+                      </th>
+                      <th className="px-4 py-3 font-semibold">Title</th>
+                      <th className="px-4 py-3 font-semibold min-w-[220px]">Artist</th>
+                      <th className="px-4 py-3 font-semibold">Genre</th>
+                      <th className="px-4 py-3 font-semibold">Mood</th>
+                      <th className="px-4 py-3 font-semibold">Instrument</th>
+                      <th className="px-4 py-3 font-semibold text-center">BPM</th>
+                      <th className="px-4 py-3 font-semibold text-center">Plays</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm divide-y divide-white/5">
+                    {filteredSongs.map((song, index) => {
+                      const isCurrent = currentSong?.videoId === song.videoId;
+                      const isPlayable = song.isMusic !== false;
+                      return (
+                        <tr
+                          key={song.id}
+                          className={`group hover:bg-white/5 transition-colors ${isCurrent ? 'bg-primary/5' : ''} ${isPlayable ? 'cursor-pointer' : 'cursor-default'}`}
+                          onClick={() => { if (isPlayable) handlePlayPause(song); }}
+                        >
+                          <td className="px-4 py-4 whitespace-nowrap text-center">
+                            {actionMode ? (
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(song.videoId)}
+                                onChange={(e) => { e.stopPropagation(); toggleSelect(song.videoId); }}
+                                className="w-4 h-4 rounded border-white/30 bg-transparent accent-primary cursor-pointer"
+                              />
+                            ) : (
+                              <span className="text-xs text-slate-500 font-mono tabular-nums">{page * limit + index + 1}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-4">
+                              <div className="album-art-wrapper relative flex-shrink-0">
+                                {song.thumbnails?.length > 0 ? (
+                                  <img
+                                    src={song.thumbnails[song.thumbnails.length - 1].url}
+                                    alt={song.title}
+                                    referrerPolicy="no-referrer"
+                                    className="h-12 w-12 rounded-full bg-surface-dark object-cover"
+                                  />
+                                ) : (
+                                  <div className="h-12 w-12 rounded-full bg-surface-dark flex items-center justify-center">
+                                    <span className="material-icons text-slate-600">music_note</span>
+                                  </div>
+                                )}
+                                {!isPlayable ? (
+                                  <div className="album-art-overlay album-art-overlay--blocked" title="Non-music content">
+                                    <span className="material-icons text-lg">block</span>
+                                  </div>
+                                ) : isCurrent ? (
+                                  <button
+                                    className={`album-art-overlay album-art-overlay--playing ${isPlaying ? 'is-playing' : ''}`}
+                                    onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
+                                    title={isPlaying ? 'Pause' : 'Play'}
+                                  >
+                                    <span className="material-icons text-lg">
+                                      {isPlaying ? 'pause' : 'play_arrow'}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="album-art-overlay album-art-overlay--playable"
+                                    onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
+                                    title="Preview song"
+                                  >
+                                    <span className="material-icons text-lg">play_arrow</span>
+                                  </button>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                {song.success === false && song.isMusic !== false && (
+                                  <span className="inline-flex items-center gap-1 mb-0.5">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
+                                    {retrying[song.videoId] === 'loading' ? (
+                                      <span className="w-4 h-4 rounded-full border border-primary border-t-transparent animate-spin inline-block" title="Retrying…" />
+                                    ) : retrying[song.videoId] === 'done' ? (
+                                      <span className="material-icons text-emerald-400 text-sm" title="Retry queued">check_circle</span>
+                                    ) : typeof retrying[song.videoId] === 'string' ? (
+                                      <span className="text-[10px] text-red-400 italic" title={retrying[song.videoId]}>error</span>
+                                    ) : (
+                                      <button
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+                                        onClick={(e) => handleRetry(e, song.videoId)}
+                                        title="Retry enrichment"
+                                      >
+                                        <span className="material-icons text-slate-400 hover:text-primary text-sm">refresh</span>
+                                      </button>
+                                    )}
+                                  </span>
+                                )}
+                                <a
+                                  href={song.url || `https://music.youtube.com/watch?v=${song.videoId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`font-medium truncate block transition-colors hover:underline ${isCurrent ? 'text-primary' : 'text-white group-hover:text-primary'}`}
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  {song.title}
+                                </a>
+                                <div className="text-[10px] text-slate-500 truncate">
+                                  {song.isMusic === false ? (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">Non-Music</span>
+                                  ) : song.album ? (
+                                    <>
+                                      {song.album.id ? (
+                                        <a
+                                          href={`https://music.youtube.com/browse/${song.album.id}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="hover:text-primary transition-colors"
+                                          onClick={e => e.stopPropagation()}
+                                        >
+                                          {song.album.name || song.album}
+                                        </a>
+                                      ) : (
+                                        <span>{typeof song.album === 'string' ? song.album : song.album.name}</span>
+                                      )}
+                                      {song.year && <span> · {song.year}</span>}
+                                    </>
+                                  ) : song.year ? (
+                                    <span>{song.year}</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 min-w-[220px]">
+                            <div className="flex gap-1 items-center whitespace-nowrap">
+                              {Array.isArray(song.artists) ? (
+                                song.artists.map((artist, i) => (
+                                  <span key={i}>
+                                    {artist.id ? (
+                                      <a
+                                        href={`https://music.youtube.com/channel/${artist.id}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-slate-300 hover:text-primary transition-colors text-sm"
+                                        onClick={e => e.stopPropagation()}
+                                      >
+                                        {artist.name}
+                                      </a>
+                                    ) : (
+                                      <span className="text-slate-300 text-sm">{artist.name}</span>
+                                    )}
+                                    {i < song.artists.length - 1 && <span className="text-slate-600">, </span>}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-slate-300 text-sm">{song.artists}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex gap-2 flex-wrap">
+                              {song.genres?.map((genre, i) => (
+                                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap"><TagIcon type="genre" value={genre} size={10} />{genre}</span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex gap-2 flex-wrap">
+                              {song.moods?.map((mood, i) => (
+                                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20 whitespace-nowrap"><TagIcon type="mood" value={mood} size={10} />{mood}</span>
+                              ))}
+                              {(!song.moods || song.moods.length === 0) && (
+                                <span className="text-slate-600 text-[10px] italic">Unknown</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex gap-2 flex-wrap">
+                              {song.instruments?.map((inst, i) => (
+                                <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap"><TagIcon type="instrument" value={inst} size={10} />{inst}</span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-center text-xs font-semibold">
+                            {song.bpm ? (
+                              <span className={`inline-flex items-center gap-1.5 ${getBpmColor(song.bpm).text}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${getBpmColor(song.bpm).dot}`}></span>
+                                {song.bpm}
+                              </span>
+                            ) : (
+                              <span className="text-slate-600">-</span>
+                            )}
+                          </td>
+                          <td className={`px-4 py-4 text-center text-xs font-semibold ${getPlayCountColor(song.playCount)}`}>
+                            {song.playCount || <span className="text-slate-600">-</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* === Mobile Card Layout (below md) === */}
+              <div className="md:hidden space-y-2">
+                {filteredSongs.map((song) => {
                   const isCurrent = currentSong?.videoId === song.videoId;
                   const isPlayable = song.isMusic !== false;
                   return (
-                    <tr
+                    <div
                       key={song.id}
-                      className={`group hover:bg-white/5 transition-colors ${isCurrent ? 'bg-primary/5' : ''} ${isPlayable ? 'cursor-pointer' : 'cursor-default'}`}
+                      className={`rounded-xl border p-3 transition-colors ${isCurrent ? 'bg-primary/5 border-primary/30' : 'bg-surface-dark/50 border-white/5 active:bg-white/5'}`}
                       onClick={() => { if (isPlayable) handlePlayPause(song); }}
                     >
-                      <td className="px-4 py-4 whitespace-nowrap text-center">
-                        {actionMode ? (
+                      <div className="flex items-start gap-3">
+                        {/* Checkbox or index */}
+                        {actionMode && (
                           <input
                             type="checkbox"
                             checked={selectedIds.has(song.videoId)}
                             onChange={(e) => { e.stopPropagation(); toggleSelect(song.videoId); }}
-                            className="w-4 h-4 rounded border-white/30 bg-transparent accent-primary cursor-pointer"
+                            className="w-4 h-4 mt-2 rounded border-white/30 bg-transparent accent-primary cursor-pointer shrink-0"
                           />
-                        ) : (
-                          <span className="text-xs text-slate-500 font-mono tabular-nums">{page * limit + index + 1}</span>
                         )}
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-4">
-                          <div className="album-art-wrapper relative flex-shrink-0">
-                            {song.thumbnails?.length > 0 ? (
-                              <img
-                                src={song.thumbnails[song.thumbnails.length - 1].url}
-                                alt={song.title}
-                                referrerPolicy="no-referrer"
-                                className="h-12 w-12 rounded-full bg-surface-dark object-cover"
-                              />
-                            ) : (
-                              <div className="h-12 w-12 rounded-full bg-surface-dark flex items-center justify-center">
-                                <span className="material-icons text-slate-600">music_note</span>
-                              </div>
-                            )}
-                            {/* Play/Block overlay */}
-                            {!isPlayable ? (
-                              <div className="album-art-overlay album-art-overlay--blocked" title="Non-music content">
-                                <span className="material-icons text-lg">block</span>
-                              </div>
-                            ) : isCurrent ? (
-                              <button
-                                className={`album-art-overlay album-art-overlay--playing ${isPlaying ? 'is-playing' : ''}`}
-                                onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
-                                title={isPlaying ? 'Pause' : 'Play'}
-                              >
-                                <span className="material-icons text-lg">
-                                  {isPlaying ? 'pause' : 'play_arrow'}
-                                </span>
-                              </button>
-                            ) : (
-                              <button
-                                className="album-art-overlay album-art-overlay--playable"
-                                onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
-                                title="Preview song"
-                              >
-                                <span className="material-icons text-lg">play_arrow</span>
-                              </button>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            {song.success === false && song.isMusic !== false && (
-                              <span className="inline-flex items-center gap-1 mb-0.5">
-                                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20 whitespace-nowrap">Failed</span>
-                                {retrying[song.videoId] === 'loading' ? (
-                                  <span className="w-4 h-4 rounded-full border border-primary border-t-transparent animate-spin inline-block" title="Retrying…" />
-                                ) : retrying[song.videoId] === 'done' ? (
-                                  <span className="material-icons text-emerald-400 text-sm" title="Retry queued">check_circle</span>
-                                ) : typeof retrying[song.videoId] === 'string' ? (
-                                  <span className="text-[10px] text-red-400 italic" title={retrying[song.videoId]}>error</span>
-                                ) : (
-                                  <button
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
-                                    onClick={(e) => handleRetry(e, song.videoId)}
-                                    title="Retry enrichment"
-                                  >
-                                    <span className="material-icons text-slate-400 hover:text-primary text-sm">refresh</span>
-                                  </button>
-                                )}
-                              </span>
-                            )}
-                            <a
-                              href={song.url || `https://music.youtube.com/watch?v=${song.videoId}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={`font-medium truncate block transition-colors hover:underline ${isCurrent ? 'text-primary' : 'text-white group-hover:text-primary'}`}
-                              onClick={e => e.stopPropagation()}
-                            >
-                              {song.title}
-                            </a>
-                            <div className="text-[10px] text-slate-500 truncate">
-                              {song.isMusic === false ? (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">Non-Music</span>
-                              ) : song.album ? (
-                                <>
-                                  {song.album.id ? (
-                                    <a
-                                      href={`https://music.youtube.com/browse/${song.album.id}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="hover:text-primary transition-colors"
-                                      onClick={e => e.stopPropagation()}
-                                    >
-                                      {song.album.name || song.album}
-                                    </a>
-                                  ) : (
-                                    <span>{typeof song.album === 'string' ? song.album : song.album.name}</span>
-                                  )}
-                                  {song.year && <span> · {song.year}</span>}
-                                </>
-                              ) : song.year ? (
-                                <span>{song.year}</span>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 min-w-[220px]">
-                        <div className="flex gap-1 items-center whitespace-nowrap">
-                          {Array.isArray(song.artists) ? (
-                            song.artists.map((artist, i) => (
-                              <span key={i}>
-                                {artist.id ? (
-                                  <a
-                                    href={`https://music.youtube.com/channel/${artist.id}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-slate-300 hover:text-primary transition-colors text-sm"
-                                    onClick={e => e.stopPropagation()}
-                                  >
-                                    {artist.name}
-                                  </a>
-                                ) : (
-                                  <span className="text-slate-300 text-sm">{artist.name}</span>
-                                )}
-                                {i < song.artists.length - 1 && <span className="text-slate-600">, </span>}
-                              </span>
-                            ))
+
+                        {/* Thumbnail */}
+                        <div className="album-art-wrapper relative flex-shrink-0">
+                          {song.thumbnails?.length > 0 ? (
+                            <img
+                              src={song.thumbnails[song.thumbnails.length - 1].url}
+                              alt={song.title}
+                              referrerPolicy="no-referrer"
+                              className="h-12 w-12 rounded-full bg-surface-dark object-cover"
+                            />
                           ) : (
-                            <span className="text-slate-300 text-sm">{song.artists}</span>
+                            <div className="h-12 w-12 rounded-full bg-surface-dark flex items-center justify-center">
+                              <span className="material-icons text-slate-600">music_note</span>
+                            </div>
+                          )}
+                          {!isPlayable ? (
+                            <div className="album-art-overlay album-art-overlay--blocked" title="Non-music content">
+                              <span className="material-icons text-lg">block</span>
+                            </div>
+                          ) : isCurrent ? (
+                            <button
+                              className={`album-art-overlay album-art-overlay--playing ${isPlaying ? 'is-playing' : ''}`}
+                              onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
+                            >
+                              <span className="material-icons text-lg">{isPlaying ? 'pause' : 'play_arrow'}</span>
+                            </button>
+                          ) : (
+                            <button
+                              className="album-art-overlay album-art-overlay--playable"
+                              style={{ opacity: 1 }}
+                              onClick={(e) => { e.stopPropagation(); handlePlayPause(song); }}
+                            >
+                              <span className="material-icons text-lg">play_arrow</span>
+                            </button>
                           )}
                         </div>
-                      </td>
 
-                      <td className="px-4 py-4">
-                        <div className="flex gap-2 flex-wrap">
-                          {song.genres?.map((genre, i) => (
-                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 whitespace-nowrap"><TagIcon type="genre" value={genre} size={10} />{genre}</span>
-                          ))}
-
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex gap-2 flex-wrap">
-                          {song.moods?.map((mood, i) => (
-                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20 whitespace-nowrap"><TagIcon type="mood" value={mood} size={10} />{mood}</span>
-                          ))}
-                          {(!song.moods || song.moods.length === 0) && (
-                            <span className="text-slate-600 text-[10px] italic">Unknown</span>
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          {song.success === false && song.isMusic !== false && (
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20">Failed</span>
+                              {retrying[song.videoId] === 'loading' ? (
+                                <span className="w-3 h-3 rounded-full border border-primary border-t-transparent animate-spin inline-block" />
+                              ) : retrying[song.videoId] === 'done' ? (
+                                <span className="material-icons text-emerald-400 text-xs">check_circle</span>
+                              ) : typeof retrying[song.videoId] === 'string' ? (
+                                <span className="text-[10px] text-red-400 italic">error</span>
+                              ) : (
+                                <button
+                                  className="p-0.5 rounded hover:bg-white/10"
+                                  onClick={(e) => handleRetry(e, song.videoId)}
+                                >
+                                  <span className="material-icons text-slate-400 text-xs">refresh</span>
+                                </button>
+                              )}
+                            </div>
                           )}
+                          <a
+                            href={song.url || `https://music.youtube.com/watch?v=${song.videoId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`font-medium text-sm truncate block hover:underline ${isCurrent ? 'text-primary' : 'text-white'}`}
+                            onClick={e => e.stopPropagation()}
+                          >
+                            {song.title}
+                          </a>
+                          <p className="text-xs text-slate-400 truncate">
+                            {Array.isArray(song.artists) ? song.artists.map(a => a.name).join(', ') : song.artists}
+                          </p>
+
+                          {/* Compact meta row */}
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            {song.bpm && (
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${getBpmColor(song.bpm).text}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${getBpmColor(song.bpm).dot}`}></span>
+                                {song.bpm} BPM
+                              </span>
+                            )}
+                            {song.playCount && (
+                              <span className={`text-[10px] font-semibold ${getPlayCountColor(song.playCount)}`}>
+                                {song.playCount} plays
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Tags */}
+                          <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                            {song.genres?.slice(0, 2).map((genre, i) => (
+                              <span key={i} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20"><TagIcon type="genre" value={genre} size={9} />{genre}</span>
+                            ))}
+                            {song.moods?.slice(0, 2).map((mood, i) => (
+                              <span key={i} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20"><TagIcon type="mood" value={mood} size={9} />{mood}</span>
+                            ))}
+                          </div>
                         </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex gap-2 flex-wrap">
-                          {song.instruments?.map((inst, i) => (
-                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20 whitespace-nowrap"><TagIcon type="instrument" value={inst} size={10} />{inst}</span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-center text-xs font-semibold">
-                        {song.bpm ? (
-                          <span className={`inline-flex items-center gap-1.5 ${getBpmColor(song.bpm).text}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${getBpmColor(song.bpm).dot}`}></span>
-                            {song.bpm}
-                          </span>
-                        ) : (
-                          <span className="text-slate-600">-</span>
-                        )}
-                      </td>
-                      <td className={`px-4 py-4 text-center text-xs font-semibold ${getPlayCountColor(song.playCount)}`}>
-                        {song.playCount || <span className="text-slate-600">-</span>}
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+            </>
           )}
         </div>
 
@@ -818,19 +943,21 @@ const Results = () => {
             <button
               disabled={page === 0}
               onClick={() => setPage(p => Math.max(0, p - 1))}
-              className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
+              className="px-2 md:px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium transition-all disabled:opacity-50"
             >
-              Prev
+              <span className="material-icons text-sm md:hidden">chevron_left</span>
+              <span className="hidden md:inline uppercase tracking-wider">Prev</span>
             </button>
-            <div className="flex items-center bg-surface-darker rounded-lg border border-white/10 p-0.5">
+            <div className="hidden md:flex items-center bg-surface-darker rounded-lg border border-white/10 p-0.5">
               <span className="w-7 h-7 flex items-center justify-center rounded bg-primary text-white text-xs font-bold shadow-neon">{page + 1}</span>
             </div>
             <button
               disabled={page + 1 >= totalPages}
               onClick={() => setPage(p => p + 1)}
-              className="px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium uppercase tracking-wider transition-all disabled:opacity-50"
+              className="px-2 md:px-3 py-1.5 rounded-lg bg-surface-darker text-slate-400 hover:text-white hover:bg-white/5 border border-white/10 text-xs font-medium transition-all disabled:opacity-50"
             >
-              Next
+              <span className="material-icons text-sm md:hidden">chevron_right</span>
+              <span className="hidden md:inline uppercase tracking-wider">Next</span>
             </button>
           </div>
         </div>

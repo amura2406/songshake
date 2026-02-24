@@ -211,6 +211,38 @@
 @media (max-width: 767px) {
     .status-bar {
         left: 0;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+        padding: 0 0.5rem;
+        padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    .status-bar__left {
+        display: none;
+    }
+
+    .status-bar__seek {
+        max-width: 70%;
+    }
+}
+
+/* ── Mobile drawer animation ─────────────────────────────── */
+@keyframes slideInLeft {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes fadeSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
 

@@ -73,7 +73,7 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-3 md:p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-white mb-2">Select a Playlist to Enrich</h2>
@@ -87,7 +87,7 @@ const Dashboard = () => {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {playlists.map((playlist) => {
               const job = getPlaylistJob(playlist.playlistId);
               const isActive = playlist.is_running || (job && ['pending', 'running'].includes(job.status));
@@ -150,7 +150,7 @@ const Dashboard = () => {
 
                     {/* Hover state for inactive playlists */}
                     {!isActive && (
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center backdrop-blur-sm gap-2">
+                      <div className="absolute inset-0 bg-black/60 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center backdrop-blur-sm gap-2">
                         <div className="relative transform scale-90 group-hover:scale-100 transition-transform">
                           {/* Split button: main action + dropdown */}
                           <div className="flex items-stretch">

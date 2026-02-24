@@ -239,17 +239,17 @@ const VibePlaylistDetail = () => {
 
     return (
         <div className="flex-1 overflow-y-auto pb-14">
-            <div className="px-6 py-4">
+            <div className="px-3 py-3 md:px-6 md:py-4">
                 {/* Back button */}
                 <button onClick={() => navigate('/vibing')} className="flex items-center gap-1 text-sm text-slate-400 hover:text-white transition-colors mb-4">
                     <ArrowLeft size={16} /> Back to Vibing
                 </button>
 
                 {/* ── Header ── */}
-                <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
                     <div>
-                        <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                            <Sparkles className="text-primary" size={24} />
+                        <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-3">
+                            <Sparkles className="text-primary shrink-0" size={24} />
                             {playlist.title}
                         </h2>
                         <p className="text-slate-400 text-sm mt-1">
@@ -265,33 +265,33 @@ const VibePlaylistDetail = () => {
                         </p>
                     </div>
 
-                    <div className="flex items-start gap-2 shrink-0">
-                        <button onClick={handleDelete} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-400 border border-white/10 hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/5 transition-all" title="Delete playlist">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2 shrink-0">
+                        <button onClick={handleDelete} className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-400 border border-white/10 hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/5 transition-all" title="Delete playlist">
                             <Trash2 size={15} /> Delete
                         </button>
                         {playlist.status === 'synced' ? (
-                            <div className="flex items-center gap-2">
-                                <span className="group/sync flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-green-500/10 text-green-400 text-sm font-medium border border-green-500/20 relative">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                <span className="group/sync flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-green-500/10 text-green-400 text-sm font-medium border border-green-500/20 relative">
                                     <CheckCircle2 size={16} /> Synced
                                     <button
                                         onClick={handleComplete}
                                         disabled={completing}
-                                        className="ml-1 opacity-0 group-hover/sync:opacity-100 transition-opacity duration-200 hover:text-green-300 disabled:opacity-50"
+                                        className="ml-1 md:opacity-0 group-hover/sync:opacity-100 transition-opacity duration-200 hover:text-green-300 disabled:opacity-50"
                                         title="Complete missing tracks"
                                     >
                                         {completing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                                     </button>
                                 </span>
                                 {(approveResult?.youtube_url || playlist.youtube_playlist_id) && (
-                                    <a href={approveResult?.youtube_url || `https://music.youtube.com/playlist?list=${playlist.youtube_playlist_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary/10 text-primary text-sm font-medium border border-primary/20 hover:bg-primary/20 transition-colors">
+                                    <a href={approveResult?.youtube_url || `https://music.youtube.com/playlist?list=${playlist.youtube_playlist_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary/10 text-primary text-sm font-medium border border-primary/20 hover:bg-primary/20 transition-colors">
                                         <ExternalLink size={14} /> Open on YouTube Music
                                     </a>
                                 )}
                             </div>
                         ) : (
-                            <div className="flex flex-col items-end gap-1">
+                            <div className="flex flex-col items-stretch sm:items-end gap-1">
                                 <button onClick={handleApprove} disabled={approving || quotaInsufficient}
-                                    className="bg-primary hover:bg-fuchsia-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-neon disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                    className="bg-primary hover:bg-fuchsia-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-neon disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                     title={quotaRemaining !== null ? `Costs ${estimatedCost.toLocaleString()} units · ${quotaRemaining.toLocaleString()} remaining` : ''}>
                                     {approving ? (<><Loader2 size={18} className="animate-spin" /> Syncing…</>) : (<><CheckCircle2 size={18} /> Approve & Sync</>)}
                                 </button>
@@ -326,7 +326,7 @@ const VibePlaylistDetail = () => {
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-6 grid grid-cols-3 gap-4"
+                        className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4"
                     >
                         {/* Genres */}
                         <div className="bg-surface-dark rounded-xl border border-white/5 p-4">
@@ -419,7 +419,8 @@ const VibePlaylistDetail = () => {
                 )}
 
                 {/* ── Track Table ── */}
-                <div className="overflow-x-auto">
+                {/* Desktop table (md+) */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-white/5 bg-surface-darker/50">
@@ -458,7 +459,6 @@ const VibePlaylistDetail = () => {
                                                         <a href={`https://music.youtube.com/watch?v=${track.videoId}`} target="_blank" rel="noopener noreferrer" className={`font-medium truncate block transition-colors hover:underline ${isCurrent ? 'text-primary' : 'text-white group-hover:text-primary'}`} onClick={e => e.stopPropagation()}>{track.title}</a>
                                                         {track.is_seed && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/20 text-primary border border-primary/30 uppercase shrink-0">Seed</span>}
                                                     </div>
-                                                    {/* Album / Year */}
                                                     <div className="text-[10px] text-slate-500 truncate">
                                                         {track.album ? (
                                                             <>
@@ -478,7 +478,6 @@ const VibePlaylistDetail = () => {
                                                 </div>
                                             </div>
                                         </td>
-                                        {/* Clickable Artist */}
                                         <td className="px-4 py-3 min-w-[200px]">
                                             <div className="flex gap-1 items-center whitespace-nowrap">
                                                 {Array.isArray(track.artists) ? (
@@ -526,6 +525,70 @@ const VibePlaylistDetail = () => {
                             })}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile card layout (below md) */}
+                <div className="md:hidden space-y-2">
+                    {playlist.tracks?.map((track, index) => {
+                        const isCurrent = currentSong?.videoId === track.videoId;
+                        return (
+                            <div
+                                key={track.videoId}
+                                className={`rounded-xl border p-3 transition-colors ${isCurrent ? 'bg-primary/5 border-primary/30' : 'bg-surface-dark/50 border-white/5 active:bg-white/5'} ${track.is_seed ? 'ring-1 ring-primary/20' : ''}`}
+                                onClick={() => handlePlayPause(track)}
+                            >
+                                <div className="flex items-start gap-3">
+                                    {/* Track number */}
+                                    <span className="text-[10px] text-slate-500 font-mono tabular-nums mt-2 w-5 text-right shrink-0">{index + 1}</span>
+
+                                    {/* Thumbnail */}
+                                    <div className="album-art-wrapper relative flex-shrink-0">
+                                        {track.thumbnails?.length > 0 ? (
+                                            <img src={track.thumbnails[track.thumbnails.length - 1].url} alt={track.title} referrerPolicy="no-referrer" className="h-10 w-10 rounded-full bg-surface-dark object-cover" />
+                                        ) : (
+                                            <div className="h-10 w-10 rounded-full bg-surface-dark flex items-center justify-center"><span className="material-icons text-slate-600 text-sm">music_note</span></div>
+                                        )}
+                                        {isCurrent ? (
+                                            <button className={`album-art-overlay album-art-overlay--playing ${isPlaying ? 'is-playing' : ''}`} onClick={(e) => { e.stopPropagation(); handlePlayPause(track); }}>
+                                                <span className="material-icons text-lg">{isPlaying ? 'pause' : 'play_arrow'}</span>
+                                            </button>
+                                        ) : (
+                                            <button className="album-art-overlay album-art-overlay--playable" style={{ opacity: 1 }} onClick={(e) => { e.stopPropagation(); handlePlayPause(track); }}>
+                                                <span className="material-icons text-lg">play_arrow</span>
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                            <a href={`https://music.youtube.com/watch?v=${track.videoId}`} target="_blank" rel="noopener noreferrer" className={`font-medium text-sm truncate block hover:underline ${isCurrent ? 'text-primary' : 'text-white'}`} onClick={e => e.stopPropagation()}>{track.title}</a>
+                                            {track.is_seed && <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-primary/20 text-primary border border-primary/30 uppercase shrink-0">Seed</span>}
+                                        </div>
+                                        <p className="text-xs text-slate-400 truncate">
+                                            {Array.isArray(track.artists) ? track.artists.map(a => a.name || a).join(', ') : track.artists}
+                                        </p>
+
+                                        {/* Compact meta */}
+                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                            {track.bpm && (
+                                                <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${getBpmColor(track.bpm).text}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${getBpmColor(track.bpm).dot}`}></span>
+                                                    {track.bpm} BPM
+                                                </span>
+                                            )}
+                                            {track.genres?.slice(0, 2).map((genre, i) => (
+                                                <span key={i} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20"><TagIcon type="genre" value={genre} size={9} />{genre}</span>
+                                            ))}
+                                            {track.moods?.slice(0, 1).map((mood, i) => (
+                                                <span key={i} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-pink-500/10 text-pink-400 border border-pink-500/20"><TagIcon type="mood" value={mood} size={9} />{mood}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
