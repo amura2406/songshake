@@ -37,6 +37,14 @@ class StoragePort(Protocol):
 
     def get_task_state(self, task_id: str) -> dict | None: ...
 
+    def get_tag_counts(self, owner: str) -> dict: ...
+
+    def rebuild_tag_counts(self, owner: str) -> dict: ...
+
+    def get_paginated_tracks(
+        self, owner: str, limit: int = 25, start_after: str | None = None
+    ) -> tuple[list[dict], str | None]: ...
+
 
 class JobStoragePort(Protocol):
     """Abstract job and AI usage storage operations."""

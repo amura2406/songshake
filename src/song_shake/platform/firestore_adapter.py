@@ -11,6 +11,7 @@ happens in storage_factory.py via lazy initialisation on first use.
 """
 
 import time as _time
+from collections import Counter
 from datetime import datetime, timezone
 from functools import lru_cache
 
@@ -43,7 +44,7 @@ def _firestore_client():
 # Per-owner TTL cache for get_all_tracks to prevent repeated Firestore reads.
 # Key: owner str → (monotonic_timestamp, list[dict])
 _tracks_cache: dict[str, tuple[float, list[dict]]] = {}
-_TRACKS_CACHE_TTL = 60  # seconds
+_TRACKS_CACHE_TTL = 3600  # seconds (1 hour — writes invalidate cache immediately)
 
 
 def _invalidate_tracks_cache(owner: str | None = None) -> None:
@@ -68,6 +69,10 @@ class FirestoreSongsAdapter:
             return
         owner = track_data.get("owner", "local")
 
+        # Read existing track for tag-count diff (before overwrite)
+        old_doc = self._db.collection("tracks").document(video_id).get()
+        old_data = old_doc.to_dict() if old_doc.exists else None
+
         # Global catalog (de-duplicated by videoId)
         global_data = {k: v for k, v in track_data.items() if k != "owner"}
         self._db.collection("tracks").document(video_id).set(global_data, merge=True)
@@ -76,6 +81,9 @@ class FirestoreSongsAdapter:
         self._db.collection("track_owners").document(f"{owner}_{video_id}").set(
             {"owner": owner, "videoId": video_id}
         )
+
+        # Update pre-computed tag counts (incremental diff)
+        self._update_tag_counts_on_save(owner, track_data, old_data)
 
         _invalidate_tracks_cache(owner)
 
@@ -160,6 +168,13 @@ class FirestoreSongsAdapter:
         if not video_ids:
             return 0
 
+        # Collect track data before deletion for tag count decrement
+        deleted_tracks_data: list[dict] = []
+        for vid in video_ids:
+            doc = self._db.collection("tracks").document(vid).get()
+            if doc.exists:
+                deleted_tracks_data.append(doc.to_dict())
+
         deleted = 0
         batch = self._db.batch()
         batch_count = 0
@@ -215,6 +230,9 @@ class FirestoreSongsAdapter:
             requested=len(video_ids),
             deleted=deleted,
         )
+        # Update pre-computed tag counts (decrement deleted tracks)
+        self._update_tag_counts_on_delete(owner, deleted_tracks_data)
+
         _invalidate_tracks_cache(owner)
         return deleted
 
@@ -309,6 +327,141 @@ class FirestoreSongsAdapter:
         doc = self._db.collection("task_states").document(task_id).get()
         return doc.to_dict() if doc.exists else None
 
+    # --- pre-computed tag counts ---
+
+    @staticmethod
+    def _extract_tags(track: dict) -> Counter:
+        """Extract tag counts from a single track for incremental updates."""
+        counts: Counter = Counter()
+        status = track.get("status", "error")
+        status_key = "status.Success" if status == "success" else "status.Failed"
+        counts[status_key] += 1
+        for g in track.get("genres", []):
+            counts[f"genres.{g}"] += 1
+        for m in track.get("moods", []):
+            counts[f"moods.{m}"] += 1
+        for i in track.get("instruments", []):
+            counts[f"instruments.{i}"] += 1
+        return counts
+
+    def _update_tag_counts_on_save(
+        self, owner: str, new_track: dict, old_track: dict | None
+    ) -> None:
+        """Incrementally update tag_counts/{owner} after saving a track."""
+        from google.cloud.firestore_v1 import Increment
+
+        new_tags = self._extract_tags(new_track)
+        old_tags = self._extract_tags(old_track) if old_track else Counter()
+
+        # Compute delta: new tags added, old tags removed
+        delta: dict[str, int] = {}
+        all_keys = set(new_tags.keys()) | set(old_tags.keys())
+        for key in all_keys:
+            diff = new_tags.get(key, 0) - old_tags.get(key, 0)
+            if diff != 0:
+                delta[key] = diff
+
+        if not delta:
+            return
+
+        # Also increment total if this is a new track (old_track is None)
+        if old_track is None:
+            delta["total"] = 1
+
+        doc_ref = self._db.collection("tag_counts").document(owner)
+        doc_ref.set(
+            {k: Increment(v) for k, v in delta.items()},
+            merge=True,
+        )
+
+    def _update_tag_counts_on_delete(
+        self, owner: str, deleted_tracks: list[dict]
+    ) -> None:
+        """Decrement tag_counts/{owner} after deleting tracks."""
+        from google.cloud.firestore_v1 import Increment
+
+        if not deleted_tracks:
+            return
+
+        combined: Counter = Counter()
+        for track in deleted_tracks:
+            combined += self._extract_tags(track)
+
+        doc_ref = self._db.collection("tag_counts").document(owner)
+        decrements = {k: Increment(-v) for k, v in combined.items()}
+        decrements["total"] = Increment(-len(deleted_tracks))
+        doc_ref.set(decrements, merge=True)
+
+    def get_tag_counts(self, owner: str) -> dict:
+        """Return pre-computed tag counts (1 Firestore read)."""
+        doc = self._db.collection("tag_counts").document(owner).get()
+        return doc.to_dict() if doc.exists else {}
+
+    def rebuild_tag_counts(self, owner: str) -> dict:
+        """Full-scan all tracks and rebuild tag_counts/{owner}."""
+        tracks = self.get_all_tracks(owner)
+        combined: Counter = Counter()
+        for t in tracks:
+            combined += self._extract_tags(t)
+
+        counts = dict(combined)
+        counts["total"] = len(tracks)
+        self._db.collection("tag_counts").document(owner).set(counts)
+        return counts
+
+    # --- paginated tracks ---
+
+    def get_paginated_tracks(
+        self, owner: str, limit: int = 25, start_after: str | None = None
+    ) -> tuple[list[dict], str | None]:
+        """Cursor-based paginated track retrieval (unfiltered only).
+
+        Returns (tracks, next_cursor). next_cursor is None on the last page.
+        Cost: ~limit ownership reads + ~limit track reads (vs ~2*N for full scan).
+        """
+        # Query track_owners ordered by videoId for stable cursor pagination
+        query = (
+            self._db.collection("track_owners")
+            .where(filter=FieldFilter("owner", "==", owner))
+            .order_by("videoId")
+            .limit(limit + 1)  # fetch one extra to detect next page
+        )
+        if start_after:
+            query = query.start_after({"videoId": start_after})
+
+        owner_docs = list(query.stream())
+
+        # Determine if there's a next page
+        has_next = len(owner_docs) > limit
+        if has_next:
+            owner_docs = owner_docs[:limit]
+
+        video_ids = [doc.to_dict()["videoId"] for doc in owner_docs]
+        if not video_ids:
+            return [], None
+
+        # Fetch track documents in batches of 30
+        tracks = []
+        for i in range(0, len(video_ids), 30):
+            batch = video_ids[i : i + 30]
+            docs = (
+                self._db.collection("tracks")
+                .where(filter=FieldFilter("videoId", "in", batch))
+                .stream()
+            )
+            track_map = {}
+            for doc in docs:
+                t = doc.to_dict()
+                t["owner"] = owner
+                track_map[t["videoId"]] = t
+            # Preserve order from ownership query
+            for vid in batch:
+                if vid in track_map:
+                    tracks.append(track_map[vid])
+
+        next_cursor = video_ids[-1] if has_next else None
+        return tracks, next_cursor
+
     # --- wipe ---
 
     def wipe_db(self) -> None:
@@ -316,7 +469,10 @@ class FirestoreSongsAdapter:
 
         WARNING: destructive. Used for testing and development only.
         """
-        for coll_name in ["tracks", "track_owners", "enrichment_history", "task_states"]:
+        for coll_name in [
+            "tracks", "track_owners", "enrichment_history",
+            "task_states", "tag_counts",
+        ]:
             docs = self._db.collection(coll_name).stream()
             for doc in docs:
                 doc.reference.delete()

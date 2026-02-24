@@ -24,6 +24,25 @@ def _make_mock_storage(tracks=None, tags=None):
         tracks if tracks is not None else [],
         tags if tags is not None else [],
     )
+    # Strategy B: paginated + tag counts
+    mock.get_paginated_tracks.return_value = (
+        tracks if tracks is not None else [],
+        None,  # no next cursor
+    )
+    raw_tag_counts = {}
+    if tracks:
+        raw_tag_counts["total"] = len(tracks)
+        for t in tracks:
+            s = t.get("status", "error")
+            sk = f"status.{'Success' if s == 'success' else 'Failed'}"
+            raw_tag_counts[sk] = raw_tag_counts.get(sk, 0) + 1
+            for g in t.get("genres", []):
+                raw_tag_counts[f"genres.{g}"] = raw_tag_counts.get(f"genres.{g}", 0) + 1
+            for m in t.get("moods", []):
+                raw_tag_counts[f"moods.{m}"] = raw_tag_counts.get(f"moods.{m}", 0) + 1
+            for i in t.get("instruments", []):
+                raw_tag_counts[f"instruments.{i}"] = raw_tag_counts.get(f"instruments.{i}", 0) + 1
+    mock.get_tag_counts.return_value = raw_tag_counts
     return mock
 
 
@@ -344,10 +363,8 @@ class TestGetSongsWithTags:
     """Tests for GET /songs-with-tags."""
 
     def test_returns_songs_and_tags(self):
-        """Should return both songs and tags from a single call."""
-        mock_storage = _make_mock_storage(
-            tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS
-        )
+        """Should return songs from cache and tags from pre-computed counts."""
+        mock_storage = _make_mock_storage(tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS)
         app.dependency_overrides[get_songs_storage] = lambda: mock_storage
 
         response = client.get("/api/songs-with-tags")
@@ -356,13 +373,14 @@ class TestGetSongsWithTags:
         data = response.json()
         assert len(data["items"]) == 3
         assert data["total"] == 3
-        assert len(data["tags"]) == 6
+        # Should use cached full-scan
+        mock_storage.get_all_tracks.assert_called_once_with(owner="test_user_123")
+        # Should use pre-computed tag counts
+        mock_storage.get_tag_counts.assert_called_once_with("test_user_123")
 
-    def test_filters_work_with_combined_endpoint(self):
-        """Should apply tag filters to the combined endpoint."""
-        mock_storage = _make_mock_storage(
-            tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS
-        )
+    def test_tag_filter_uses_same_cached_path(self):
+        """Should use cached full-scan even with filters active."""
+        mock_storage = _make_mock_storage(tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS)
         app.dependency_overrides[get_songs_storage] = lambda: mock_storage
 
         response = client.get("/api/songs-with-tags?tags=Rock")
@@ -371,5 +389,111 @@ class TestGetSongsWithTags:
         data = response.json()
         assert len(data["items"]) == 1
         assert data["items"][0]["videoId"] == "vid1"
-        # Tags should still reflect all tracks, not filtered ones
-        assert len(data["tags"]) == 6
+        mock_storage.get_all_tracks.assert_called_once()
+
+    def test_bpm_filter_works(self):
+        """Should filter by BPM from cached data."""
+        mock_storage = _make_mock_storage(tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS)
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.get("/api/songs-with-tags?min_bpm=100")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["videoId"] == "vid1"
+
+    def test_tag_counts_response_format(self):
+        """Should format pre-computed tag counts correctly."""
+        mock_storage = _make_mock_storage(tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS)
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.get("/api/songs-with-tags")
+
+        assert response.status_code == 200
+        data = response.json()
+        tags = data["tags"]
+        assert len(tags) > 0
+        for tag in tags:
+            assert "name" in tag
+            assert "type" in tag
+            assert "count" in tag
+            assert tag["type"] in ("genre", "mood", "instrument", "status")
+
+    def test_pagination_offset(self):
+        """Should paginate from cached data using skip/limit."""
+        mock_storage = _make_mock_storage(tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS)
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.get("/api/songs-with-tags?skip=1&limit=1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["total"] == 3
+
+    def test_falls_back_when_tag_counts_empty(self):
+        """Should fall back to get_all_tracks_with_tags when tag_counts is empty."""
+        mock_storage = _make_mock_storage(tracks=SAMPLE_TRACKS, tags=SAMPLE_TAGS)
+        mock_storage.get_tag_counts.return_value = {}  # empty = never built
+        app.dependency_overrides[get_songs_storage] = lambda: mock_storage
+
+        response = client.get("/api/songs-with-tags")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["tags"]) == 6  # falls back to computed tags
+
+
+class TestFormatTagCounts:
+    """Tests for _format_tag_counts pure function."""
+
+    def test_converts_flat_dict_to_sorted_list(self):
+        """Should convert flat tag_counts dict to sorted TagResponse list."""
+        from song_shake.features.songs.routes import _format_tag_counts
+
+        raw = {
+            "genres.Rock": 45,
+            "genres.Pop": 32,
+            "moods.Energetic": 28,
+            "status.Success": 950,
+            "total": 962,
+        }
+        result = _format_tag_counts(raw)
+
+        assert len(result) == 4  # total excluded
+        # Sorted by count descending
+        assert result[0] == {"name": "Success", "type": "status", "count": 950}
+        assert result[1] == {"name": "Rock", "type": "genre", "count": 45}
+        assert result[2] == {"name": "Pop", "type": "genre", "count": 32}
+        assert result[3] == {"name": "Energetic", "type": "mood", "count": 28}
+
+    def test_skips_zero_counts(self):
+        """Should exclude tags with zero or negative counts."""
+        from song_shake.features.songs.routes import _format_tag_counts
+
+        raw = {"genres.Rock": 0, "genres.Pop": -1, "moods.Chill": 5, "total": 5}
+        result = _format_tag_counts(raw)
+
+        assert len(result) == 1
+        assert result[0]["name"] == "Chill"
+
+    def test_handles_empty_dict(self):
+        """Should return empty list for empty dict."""
+        from song_shake.features.songs.routes import _format_tag_counts
+
+        assert _format_tag_counts({}) == []
+
+    def test_singularizes_type_names(self):
+        """Should convert 'genres' -> 'genre', 'moods' -> 'mood', etc."""
+        from song_shake.features.songs.routes import _format_tag_counts
+
+        raw = {
+            "genres.Rock": 1,
+            "moods.Happy": 1,
+            "instruments.Guitar": 1,
+            "status.Success": 1,
+        }
+        result = _format_tag_counts(raw)
+        types = {r["type"] for r in result}
+        assert types == {"genre", "mood", "instrument", "status"}

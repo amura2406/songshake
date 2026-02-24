@@ -173,3 +173,132 @@ class TestFirestoreSongsAdapter:
         """Should return 0 for empty video_ids list."""
         assert songs_adapter.delete_tracks("alice", []) == 0
 
+    # --- tag counts ---
+
+    def test_tag_counts_updated_on_save(self, songs_adapter):
+        """Should maintain pre-computed tag counts when saving tracks."""
+        songs_adapter.save_track({
+            "videoId": "tc1", "owner": "o", "status": "success",
+            "genres": ["Rock", "Pop"], "moods": ["Happy"], "instruments": ["Guitar"],
+        })
+        songs_adapter.save_track({
+            "videoId": "tc2", "owner": "o", "status": "error",
+            "genres": ["Rock"], "moods": [], "instruments": [],
+        })
+
+        counts = songs_adapter.get_tag_counts("o")
+        assert counts.get("total") == 2
+        assert counts.get("genres.Rock") == 2
+        assert counts.get("genres.Pop") == 1
+        assert counts.get("moods.Happy") == 1
+        assert counts.get("status.Success") == 1
+        assert counts.get("status.Failed") == 1
+
+    def test_tag_counts_decremented_on_delete(self, songs_adapter):
+        """Should decrement tag counts when tracks are deleted."""
+        songs_adapter.save_track({
+            "videoId": "td1", "owner": "o", "status": "success",
+            "genres": ["Rock"], "moods": ["Energetic"], "instruments": [],
+        })
+        songs_adapter.save_track({
+            "videoId": "td2", "owner": "o", "status": "success",
+            "genres": ["Rock", "Pop"], "moods": [], "instruments": [],
+        })
+
+        # Delete one track
+        songs_adapter.delete_tracks("o", ["td1"])
+
+        counts = songs_adapter.get_tag_counts("o")
+        assert counts.get("genres.Rock") == 1  # was 2, now 1
+        assert counts.get("genres.Pop") == 1  # unchanged
+        # Energetic was only on td1, now 0 (may still be key with 0)
+        assert counts.get("moods.Energetic", 0) <= 0
+
+    def test_tag_counts_handles_track_update(self, songs_adapter):
+        """Should adjust tag counts when a track's tags are updated."""
+        songs_adapter.save_track({
+            "videoId": "tu1", "owner": "o", "status": "success",
+            "genres": ["Rock"], "moods": [], "instruments": [],
+        })
+        counts_before = songs_adapter.get_tag_counts("o")
+        assert counts_before.get("genres.Rock") == 1
+
+        # Update genres from Rock to Pop
+        songs_adapter.save_track({
+            "videoId": "tu1", "owner": "o", "status": "success",
+            "genres": ["Pop"], "moods": [], "instruments": [],
+        })
+        counts_after = songs_adapter.get_tag_counts("o")
+        assert counts_after.get("genres.Rock", 0) <= 0  # Rock removed
+        assert counts_after.get("genres.Pop") == 1  # Pop added
+        assert counts_after.get("total") == 1  # Still 1 track, not 2
+
+    def test_rebuild_tag_counts(self, songs_adapter):
+        """Should rebuild tag counts from scratch via full scan."""
+        songs_adapter.save_track({
+            "videoId": "rb1", "owner": "o", "status": "success",
+            "genres": ["Jazz"], "moods": ["Calm"], "instruments": [],
+        })
+        songs_adapter.save_track({
+            "videoId": "rb2", "owner": "o", "status": "success",
+            "genres": ["Jazz", "Blues"], "moods": [], "instruments": [],
+        })
+
+        rebuilt = songs_adapter.rebuild_tag_counts("o")
+        assert rebuilt["total"] == 2
+        assert rebuilt["genres.Jazz"] == 2
+        assert rebuilt["genres.Blues"] == 1
+        assert rebuilt.get("moods.Calm") == 1
+
+    def test_tag_counts_empty_for_unknown_owner(self, songs_adapter):
+        """Should return empty dict for owner with no tracks."""
+        counts = songs_adapter.get_tag_counts("nobody")
+        assert counts == {}
+
+    # --- paginated tracks ---
+
+    def test_paginated_tracks_returns_page(self, songs_adapter):
+        """Should return only requested number of tracks."""
+        for i in range(5):
+            songs_adapter.save_track({
+                "videoId": f"pg{i}", "owner": "o", "status": "success",
+                "title": f"Track {i}",
+            })
+
+        tracks, next_cursor = songs_adapter.get_paginated_tracks("o", limit=3)
+        assert len(tracks) == 3
+        assert next_cursor is not None
+
+    def test_paginated_tracks_cursor_navigation(self, songs_adapter):
+        """Should navigate to second page using cursor."""
+        for i in range(5):
+            songs_adapter.save_track({
+                "videoId": f"nav{i:02d}", "owner": "o", "status": "success",
+                "title": f"Track {i}",
+            })
+
+        page1, cursor1 = songs_adapter.get_paginated_tracks("o", limit=3)
+        assert len(page1) == 3
+        assert cursor1 is not None
+
+        page2, cursor2 = songs_adapter.get_paginated_tracks("o", limit=3, start_after=cursor1)
+        assert len(page2) == 2  # remaining 2 tracks
+        assert cursor2 is None  # last page
+        # No duplicates across pages
+        page1_ids = {t["videoId"] for t in page1}
+        page2_ids = {t["videoId"] for t in page2}
+        assert page1_ids.isdisjoint(page2_ids)
+
+    def test_paginated_tracks_last_page(self, songs_adapter):
+        """Should return next_cursor=None on the last page."""
+        songs_adapter.save_track({"videoId": "lp1", "owner": "o", "status": "success"})
+
+        tracks, cursor = songs_adapter.get_paginated_tracks("o", limit=10)
+        assert len(tracks) == 1
+        assert cursor is None
+
+    def test_paginated_tracks_empty(self, songs_adapter):
+        """Should return empty list for owner with no tracks."""
+        tracks, cursor = songs_adapter.get_paginated_tracks("nobody", limit=10)
+        assert tracks == []
+        assert cursor is None

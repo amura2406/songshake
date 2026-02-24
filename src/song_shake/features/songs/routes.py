@@ -119,6 +119,29 @@ def _paginate(
     }
 
 
+def _format_tag_counts(raw: dict) -> list[dict]:
+    """Convert flat tag_counts dict to sorted TagResponse list (pure function).
+
+    Input:  {"genres.Rock": 45, "moods.Energetic": 28, "status.Success": 950, "total": 962}
+    Output: [{"name": "Success", "type": "status", "count": 950}, {"name": "Rock", "type": "genre", ...}]
+    """
+    result = []
+    for key, count in raw.items():
+        if key == "total":
+            continue
+        parts = key.split(".", 1)
+        if len(parts) != 2:
+            continue
+        tag_type, name = parts
+        # Normalize type: "genres" -> "genre", "moods" -> "mood", etc.
+        singular_type = tag_type.rstrip("s") if tag_type != "status" else "status"
+        count_int = int(count) if isinstance(count, (int, float)) else 0
+        if count_int > 0:
+            result.append({"name": name, "type": singular_type, "count": count_int})
+    result.sort(key=lambda x: (-x["count"], x["name"]))
+    return result
+
+
 # --- Routes ---
 
 @router.get("/songs", response_model=PaginatedSongs)
@@ -159,8 +182,15 @@ def get_songs_with_tags(
     min_bpm: Optional[int] = Query(default=None, ge=1, le=300),
     max_bpm: Optional[int] = Query(default=None, ge=1, le=300),
 ):
-    """Return paginated songs and tag counts in a single read pass."""
+    """Return paginated songs and tag counts.
+
+    Uses cached full-scan + in-memory pagination for instant page navigation.
+    After the first load (which fills the 1-hour TTL cache), all subsequent
+    pages and filter changes are served from memory with zero Firestore reads.
+    Tag counts come from a pre-computed document (1 read).
+    """
     owner = user["sub"]
+
     logger.info(
         "get_songs_with_tags_requested",
         owner=owner,
@@ -171,13 +201,17 @@ def get_songs_with_tags(
         max_bpm=max_bpm,
     )
 
-    # Use combined method if available (Firestore adapter), fall back to
-    # separate calls for other backends.
-    if hasattr(storage, "get_all_tracks_with_tags"):
-        all_tracks, tag_list = storage.get_all_tracks_with_tags(owner=owner)
-    else:
-        all_tracks = storage.get_all_tracks(owner=owner)
-        tag_list = storage.get_tags(owner=owner)
+    # Load all tracks (from cache after first call) + pre-computed tag counts
+    all_tracks = storage.get_all_tracks(owner=owner)
+    raw_counts = storage.get_tag_counts(owner)
+    tag_list = _format_tag_counts(raw_counts)
+
+    # If tag_counts doc is empty (e.g. never built), fall back to computing
+    if not tag_list and all_tracks:
+        if hasattr(storage, "get_all_tracks_with_tags"):
+            _, tag_list = storage.get_all_tracks_with_tags(owner=owner)
+        else:
+            tag_list = storage.get_tags(owner=owner)
 
     filtered = _filter_tracks(all_tracks, tags, min_bpm, max_bpm)
     result = _paginate(filtered, skip, limit)

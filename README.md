@@ -1,6 +1,6 @@
 ![Song Shake Banner](banner.png)
 
-# Song Shake (v1.6.0)
+# Song Shake (v1.7.0)
 
 Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song Shake** enriches your YouTube Music playlists with **Genres**, **Moods**, **Instruments**, **BPM**, and **Play Counts** using **Google Gemini 3 Flash** and **YouTube Music API**.
 
@@ -17,7 +17,7 @@ Is your playlist feeling a bit stale? Does it lack that *metadata spice*? **Song
 - **Retry Failed Tracks**: Per-track retry with UNPLAYABLE fallback (finds playable alternative via search).
 - **Background Jobs**: Concurrent-safe enrichment with real-time progress via polling.
 - **Bulk Song Deletion**: Select tracks via action mode checkboxes, confirm, and permanently remove from your library with orphan cleanup.
-- **Optimized Firestore Reads**: TTL caching, demand-only polling, and call deduplication reduce reads from 363K to <10K/hour. See [docs/firestore-read-optimization.md](docs/firestore-read-optimization.md).
+- **Optimized Firestore Reads**: 1-hour TTL caching, pre-computed tag counts, demand-only polling, and call deduplication reduce reads from 363K to <10K/hour. See [docs/firestore-read-optimization.md](docs/firestore-read-optimization.md).
 - **Firestore Storage** (production) / TinyDB (local development).
 - **CLI Tool**: Classic command-line interface for quick operations.
 
